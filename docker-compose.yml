@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:3000"
+    volumes:
+      - /Videos/youtube-memories/:/app/downloads
+    environment:
+      - PORT=3000
+    env_file:
+      - .env
+    restart: unless-stopped

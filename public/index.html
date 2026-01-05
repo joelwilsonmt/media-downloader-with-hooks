@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube to TikTok Processor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#ff0050', // TikTok Red-ish
+                        secondary: '#00f2ea', // TikTok Aqua-ish
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-900 text-white h-screen flex items-center justify-center font-sans antialiased">
+
+    <div class="w-full max-w-md p-8 bg-gray-800 rounded-xl shadow-2xl border border-gray-700">
+        <h1 class="text-3xl font-bold mb-2 text-center bg-gradient-to-r from-secondary to-primary bg-clip-text text-transparent">
+            YT ➜ TikTok
+        </h1>
+        <p class="text-gray-400 text-center mb-8">Automate your content workflow</p>
+
+        <form id="processForm" class="space-y-6">
+            <div>
+                <label for="url" class="block text-sm font-medium text-gray-300 mb-2">YouTube URL</label>
+                <input 
+                    type="url" 
+                    id="url" 
+                    required 
+                    class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder-gray-500"
+                    placeholder="https://www.youtube.com/watch?v=..."
+                >
+            </div>
+
+            <button 
+                type="submit" 
+                id="submitBtn"
+                class="w-full py-3 px-4 bg-gradient-to-r from-primary to-pink-600 hover:from-primary hover:to-primary rounded-lg font-bold shadow-lg transform transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                Process Video
+            </button>
+        </form>
+
+        <div id="statusArea" class="mt-6 hidden p-4 rounded-lg bg-gray-700/50 text-sm border border-gray-600">
+            <div id="loading" class="hidden flex items-center justify-center space-x-2">
+                <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Processing...</span>
+            </div>
+            <div id="result" class="hidden text-center"></div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('processForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const statusArea = document.getElementById('statusArea');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const url = document.getElementById('url').value;
+
+            // Update UI
+            submitBtn.disabled = true;
+            statusArea.classList.remove('hidden');
+            loading.classList.remove('hidden');
+            result.classList.add('hidden');
+            statusArea.className = 'mt-6 p-4 rounded-lg bg-gray-700/50 text-sm border border-gray-600'; // Reset styles
+
+            try {
+                const response = await fetch('/api/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ url })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    result.innerHTML = `<span class="text-green-400 font-bold">Success!</span><br>${data.message}`;
+                } else {
+                    statusArea.className = 'mt-6 p-4 rounded-lg bg-red-900/20 text-sm border border-red-800 text-left';
+                    const errorDetails = data.details ? `<pre class="mt-2 p-2 bg-black/30 rounded text-xs text-red-300 overflow-x-auto whitespace-pre-wrap">${data.details}</pre>` : '';
+                    result.innerHTML = `<span class="text-red-400 font-bold">Error</span><br>${data.error || 'Something went wrong'}${errorDetails}`;
+                }
+            } catch (err) {
+                statusArea.className = 'mt-6 p-4 rounded-lg bg-red-900/20 text-sm border border-red-800';
+                result.innerHTML = `<span class="text-red-400 font-bold">Network Error</span><br>Failed to reach server`;
+            } finally {
+                loading.classList.add('hidden');
+                result.classList.remove('hidden');
+                submitBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
