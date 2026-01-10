@@ -37,6 +37,7 @@ async function setup() {
 
     // Check ffmpeg
     try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const ffmpegStatic = require('ffmpeg-static');
         if (ffmpegStatic && fs.existsSync(ffmpegStatic)) {
              console.log(`[Setup] ffmpeg-static found at: ${ffmpegStatic}`);

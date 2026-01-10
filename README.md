@@ -56,6 +56,33 @@ This project is **self-contained**. You usually do not need to install extra bin
     Navigate to `http://localhost:8080`.
     *Note: The Docker container maps the internal `./downloads` to your host machine's configured volume.*
 
+### 🐳 Add to your own Docker Compose
+
+If you want to include this service as part of your existing stack, simply add the following to your `docker-compose.yml`:
+
+```yaml
+services:
+  youtube-downloader:
+    # If cloning the repo locally
+    build: 
+      context: ./path/to/youtube-downloader-repo
+    # OR if you have built an image
+    # image: youtube-downloader:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./downloads:/app/downloads
+    # You can set variables here directly to override .env
+    environment:
+      - ENABLE_TIKTOK=true
+      - TIKTOK_ACCESS_TOKEN=your_token_here
+      - ENABLE_SLACK=true
+      - SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx
+    env_file:
+      - .env
+    restart: unless-stopped
+```
+
 ## ⚙️ Configuration
 
 Copy `.env.example` to `.env` and configure your keys:

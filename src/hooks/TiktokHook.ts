@@ -1,19 +1,15 @@
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
+import { Hook, DownloadResult } from './Hook';
 
-interface UploadResult {
-  status: 'success' | 'skipped' | 'error';
-  data?: unknown;
-  message?: string;
-  error?: string;
-}
-
-export class TiktokService {
+export class TiktokHook implements Hook {
+  name = 'TiktokHook';
   private clientKey: string;
   private clientSecret: string;
   private accessToken: string;
   private baseUrl = 'https://open.tiktokapis.com/v2';
+  private enabled = false;
 
   constructor() {
     this.clientKey = process.env.TIKTOK_CLIENT_KEY || '';
@@ -21,16 +17,25 @@ export class TiktokService {
     this.accessToken = process.env.TIKTOK_ACCESS_TOKEN || '';
   }
 
-  /**
-   * Uploads a video to TikTok using the Direct Post API.
-   * Note: This is a simplified flow. Real implementation deals with chunked uploads and status polling.
-   */
-  async uploadVideo(filePath: string): Promise<UploadResult> {
-    if (!this.accessToken) {
-      console.warn('TikTok access token not configured. Skipping upload.');
-      return { status: 'skipped', message: 'No access token' };
+  async init(): Promise<void> {
+    if (process.env.ENABLE_TIKTOK === 'true' && this.accessToken) {
+        this.enabled = true;
+        console.log('[TiktokHook] Enabled.');
+    } else {
+        if (process.env.ENABLE_TIKTOK === 'true' && !this.accessToken) {
+             console.warn('[TiktokHook] Enabled but no access token provided. Disabled.');
+        } else {
+             console.log('[TiktokHook] Disabled.');
+        }
+        this.enabled = false;
     }
+  }
 
+  async execute(result: DownloadResult): Promise<void> {
+    if (!this.enabled) return;
+
+    const filePath = result.filePath;
+    
     try {
       console.log(`[TikTok] Starting upload for ${filePath}`);
       const fileStats = fs.statSync(filePath);
@@ -41,7 +46,7 @@ export class TiktokService {
         `${this.baseUrl}/post/publish/video/init/`,
         {
           post_info: {
-            title: path.basename(filePath),
+            title: result.videoTitle || path.basename(filePath),
             privacy_level: 'SELF_ONLY', // Default to private for safety
             disable_duet: false,
             disable_comment: false,
@@ -51,7 +56,7 @@ export class TiktokService {
           source_info: {
             source: 'FILE_UPLOAD',
             video_size: fileSize,
-            chunk_size: fileSize, // Uploading in one chunk for simplicity if small enough
+            chunk_size: fileSize, 
             total_chunk_count: 1,
           },
         },
@@ -79,14 +84,12 @@ export class TiktokService {
       });
 
       console.log('[TikTok] Upload successful');
-      return { status: 'success', data: initResponse.data };
 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      // Safe access to axios response data if possible, but keeping it simple for now
       console.error('[TikTok] Upload failed:', errorMessage);
-      // Don't throw for the background process, just return error state so app doesn't crash
-      return { status: 'error', error: errorMessage }; 
+      // We re-throw so HookManager knows it failed
+      throw new Error(`TikTok Upload Failed: ${errorMessage}`);
     }
   }
 }

@@ -9,6 +9,13 @@ services:
       - /Videos/youtube-memories/:/app/downloads
     environment:
       - PORT=3000
+      # Hooks Configuration
+      - ENABLE_TIKTOK=false
+      - TIKTOK_CLIENT_KEY=
+      - TIKTOK_CLIENT_SECRET=
+      - TIKTOK_ACCESS_TOKEN=
+      - ENABLE_SLACK=false
+      - SLACK_WEBHOOK_URL=
     env_file:
       - .env
     restart: unless-stopped

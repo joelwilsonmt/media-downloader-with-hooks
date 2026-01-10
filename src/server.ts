@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { spawn } from 'child_process';
 import dotenv from 'dotenv';
-import { TiktokService } from './TiktokService';
+import { HookManager } from './hooks/HookManager';
 import ffmpegStatic from 'ffmpeg-static';
 
 dotenv.config();
@@ -15,7 +15,7 @@ const server = fastify({
   keepAliveTimeout: 1200000,
   bodyLimit: 1048576 * 50 // 50MB body limit (not strictly needed for URL, but good hygiene)
 });
-const tiktokService = new TiktokService();
+const hookManager = new HookManager();
 
 // Determine download directory: Env var -> Docker path -> Local 'downloads' folder
 const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || (process.env.IS_DOCKER ? '/app/downloads' : path.join(process.cwd(), 'downloads'));
@@ -31,12 +31,17 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
   }
 }
 
+// ... Binary Setup ...
 // Resolve Binary Paths
 const PROJECT_ROOT = process.cwd();
 // Prioritize local bin (from setup script), then global
 const localYtDlp = path.join(PROJECT_ROOT, 'bin', 'yt-dlp');
 const YT_DLP_PATH = fs.existsSync(localYtDlp) ? localYtDlp : 'yt-dlp';
 const FFMPEG_PATH = ffmpegStatic || 'ffmpeg';
+
+// ... Server Routes ...
+
+
 
 // Serve index.html
 server.get('/', async (_request: FastifyRequest, reply: FastifyReply) => {
@@ -63,7 +68,7 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
 
   // Use a timestamp to avoid filename collisions and simple mapping
   // Use a timestamp to avoid filename collisions and simple mapping
-  const timestamp = Date.now();
+  // const timestamp = Date.now();
   // Using %(title)s allows human-readable filenames. 
   // We keep the timestamp prefix to identify the specific download request reliably, 
   // but we put it in a way that looks like part of the name or distinct.
@@ -102,13 +107,20 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
       
       '-o', outputTemplate,
       '--no-playlist',
+      
+      // CRITICAL: Print the filename so we can parse it from stdout
+      // NOTE: --print filename implies simulation, so we must explicitly disable simulation to download
+      '--print', 'filename',
+      '--no-simulate',
+      
       url
     ];
 
-    const startTimestamp = Date.now();
+    // Remove unused timestamp variable
+    // const startTimestamp = Date.now();
     const ytDlp = spawn(YT_DLP_PATH, args);
 
-    let finalFilePath = '';
+    let finalFilePath = ''; // Will be captured from stdout
     const logs: string[] = [];
     const errorLogs: string[] = [];
     const MAX_LOGS = 100;
@@ -120,19 +132,53 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
         }
     };
 
+    let stdoutBuffer = '';
+
+    const processLine = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+
+        // Log everything from yt-dlp to console
+        console.log(`[yt-dlp] ${trimmed}`);
+        addLog(logs, trimmed);
+
+        // Robust check:
+        // 1. Ends with .mp4 (video file)
+        // 2. Is an absolute path (yt-dlp --print filename with absolute output template returns absolute path)
+        if (trimmed.endsWith('.mp4') && path.isAbsolute(trimmed)) {
+            finalFilePath = trimmed;
+        }
+    };
+
     ytDlp.stdout.on('data', (data: Buffer) => {
-      const line = data.toString();
-      console.log(`[yt-dlp] ${line.trim()}`);
-      addLog(logs, line.trim());
+      stdoutBuffer += data.toString();
+      const lines = stdoutBuffer.split('\n');
+      
+      // The last element is either an empty string (if data ended with \n) 
+      // or a partial line. We keep it in the buffer.
+      stdoutBuffer = lines.pop() || '';
+
+      for (const line of lines) {
+        processLine(line);
+      }
     });
 
     ytDlp.stderr.on('data', (data: Buffer) => {
-      const line = data.toString().trim();
-      console.error(`[yt-dlp] ${line}`);
-      addLog(errorLogs, line);
+      const lines = data.toString().split('\n');
+      for (const line of lines) {
+          if (line.trim()) {
+            console.error(`[yt-dlp] ${line.trim()}`);
+            addLog(errorLogs, line.trim());
+          }
+      }
     });
 
     ytDlp.on('close', async (code: number | null) => {
+      // Process any remaining buffer
+      if (stdoutBuffer.trim()) {
+          processLine(stdoutBuffer);
+      }
+
       if (code !== 0) {
         return resolve(reply.status(500).send({ 
           error: 'Download failed',
@@ -140,53 +186,38 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
         }));
       }
 
-      console.log('[Processor] Download complete. Searching for file...');
-      
-      // Search for the most recently modified file in the download directory
-      try {
-        const files = fs.readdirSync(DOWNLOAD_DIR);
-        // Map files to stats
-        const fileStats = files.map(file => {
-            const filepath = path.join(DOWNLOAD_DIR, file);
-            return { file, mtime: fs.statSync(filepath).mtimeMs };
-        });
-        
-        // Filter for files modified/created after we started the process (minus small buffer)
-        // Note: With transcoding, the file might be created later than start, which is fine.
-        const recentFiles = fileStats.filter(f => f.mtime >= startTimestamp - 5000 && f.file.endsWith('.mp4'));
-        
-        // Sort by newest
-        recentFiles.sort((a, b) => b.mtime - a.mtime);
-
-        if (recentFiles.length === 0) {
+      if (!finalFilePath || !fs.existsSync(finalFilePath)) {
+          // If we failed to capture filename from stdout, try to backup guess?
+          // Or just fail. Let's try to fail for now to be strict.
+          // Actually, let's try to construct it if we can?
+          // No, trusting stdout is better.
+          
+           console.error('[Processor] Could not detect output filename from yt-dlp stdout.');
            return resolve(reply.status(500).send({ 
-             error: 'File not found after download',
-             details: 'yt-dlp exited successfully but no new .mp4 file was found.'
+             error: 'Download failed - file not detected',
+             details: 'yt-dlp exited successfully but the output filename could not be determined.'
            }));
-        }
-
-        const downloadedFile = recentFiles[0].file;
-        const fullPath = path.join(DOWNLOAD_DIR, downloadedFile);
-        console.log(`[Processor] File located: ${fullPath}`);
-
-        // Trigger TikTok Upload (Async)
-        tiktokService.uploadVideo(fullPath)
-          .then(() => console.log('Background upload completed'))
-          .catch((err: unknown) => console.error('Background upload failed', err));
-
-        return resolve(reply.send({ 
-          success: true, 
-          message: 'Download completed, upload started in background', 
-          file: downloadedFile 
-        }));
-
-      } catch (err) {
-         console.error('[Processor] file scanning failed', err);
-         return resolve(reply.status(500).send({ 
-           error: 'File processing error',
-           details: err instanceof Error ? err.message : String(err)
-         }));
       }
+
+      console.log(`[Processor] File located: ${finalFilePath}`);
+
+      // Trigger Hooks (Async)
+      const downloadedFile = path.basename(finalFilePath);
+      const videoTitle = path.basename(downloadedFile, path.extname(downloadedFile));
+      
+      hookManager.notify({
+          filePath: finalFilePath,
+          fileName: downloadedFile,
+          videoTitle: videoTitle,
+          sourceUrl: url
+      }).then(() => console.log('Hooks processing completed'))
+        .catch(err => console.error('Hooks processing had errors', err));
+
+      return resolve(reply.send({ 
+        success: true, 
+        message: 'Download completed, processing hooks in background', 
+        file: downloadedFile 
+      }));
     });
   });
 });
