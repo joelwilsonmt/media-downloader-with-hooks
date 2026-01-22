@@ -38,12 +38,44 @@
                 >
             </div>
 
+            <!-- YouTube Preview -->
+            <div id="previewContainer" class="hidden aspect-video w-full rounded-lg overflow-hidden border border-gray-700 bg-black">
+                <iframe id="youtubePreview" class="w-full h-full" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <label class="flex items-center space-x-3 cursor-pointer group">
+                    <input type="checkbox" id="audioOnly" class="form-checkbox h-5 w-5 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary">
+                    <span class="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">Download MP3</span>
+                </label>
+                <label class="flex items-center space-x-3 cursor-pointer group">
+                    <input type="checkbox" id="enableRange" class="form-checkbox h-5 w-5 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary">
+                    <span class="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">Only part of video</span>
+                </label>
+            </div>
+
+            <!-- Range Selection UI -->
+            <div id="rangeContainer" class="hidden space-y-4 p-4 bg-gray-700/30 rounded-lg border border-gray-700">
+                <div class="flex justify-between text-xs text-gray-400">
+                    <span>Start: <span id="startTimeLabel" class="text-secondary font-mono">0:00</span></span>
+                    <span>End: <span id="endTimeLabel" class="text-primary font-mono">3:00</span></span>
+                </div>
+                <!-- Dual Range Slider -->
+                <div class="relative h-2 bg-gray-600 rounded-full mt-2">
+                    <input type="range" id="startTime" min="0" max="600" value="0" class="absolute w-full h-2 bg-transparent appearance-none cursor-pointer pointer-events-none z-10 [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-secondary">
+                    <input type="range" id="endTime" min="0" max="600" value="180" class="absolute w-full h-2 bg-transparent appearance-none cursor-pointer pointer-events-none z-20 [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary">
+                </div>
+                <div class="text-[10px] text-gray-500 text-center italic">
+                    Note: Adjust handles to set duration (max 10 mins for preview)
+                </div>
+            </div>
+
             <button 
                 type="submit" 
                 id="submitBtn"
                 class="w-full py-3 px-4 bg-gradient-to-r from-primary to-pink-600 hover:from-primary hover:to-primary rounded-lg font-bold shadow-lg transform transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-                Process Video
+                Process Request
             </button>
         </form>
 
@@ -65,10 +97,96 @@
         const statusArea = document.getElementById('statusArea');
         const loading = document.getElementById('loading');
         const result = document.getElementById('result');
+        const urlInput = document.getElementById('url');
+        const previewContainer = document.getElementById('previewContainer');
+        const youtubePreview = document.getElementById('youtubePreview');
+        const enableRange = document.getElementById('enableRange');
+        const rangeContainer = document.getElementById('rangeContainer');
+        const audioOnly = document.getElementById('audioOnly');
+        
+        const startTimeInput = document.getElementById('startTime');
+        const endTimeInput = document.getElementById('endTime');
+        const startTimeLabel = document.getElementById('startTimeLabel');
+        const endTimeLabel = document.getElementById('endTimeLabel');
+
+        // Helper: Format seconds to M:SS
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // Helper: Extract Video ID
+        function getYouTubeID(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+
+        // Handle URL changes
+        urlInput.addEventListener('input', async () => {
+            const videoId = getYouTubeID(urlInput.value);
+            if (videoId) {
+                youtubePreview.src = `https://www.youtube.com/embed/${videoId}?autoplay=0`;
+                previewContainer.classList.remove('hidden');
+
+                // Fetch video duration
+                try {
+                    const response = await fetch(`/api/info?url=${encodeURIComponent(urlInput.value)}`);
+                    const data = await response.json();
+                    if (data.duration) {
+                        const duration = data.duration;
+                        startTimeInput.max = duration;
+                        endTimeInput.max = duration;
+                        endTimeInput.value = duration;
+                        endTimeLabel.textContent = formatTime(duration);
+                        console.log(`[Frontend] Duration synced: ${duration}s`);
+                    }
+                } catch (err) {
+                    console.error('[Frontend] Failed to fetch video duration', err);
+                }
+            } else {
+                previewContainer.classList.add('hidden');
+                youtubePreview.src = '';
+            }
+        });
+
+        // Toggle Range UI
+        enableRange.addEventListener('change', () => {
+            if (enableRange.checked) {
+                rangeContainer.classList.remove('hidden');
+            } else {
+                rangeContainer.classList.add('hidden');
+            }
+        });
+
+        // Dual Handle Range Logic
+        function updateRange() {
+            let start = parseInt(startTimeInput.value);
+            let end = parseInt(endTimeInput.value);
+
+            if (start > end) {
+                // If they cross, we snap them or just swap labels for display
+                // For a smooth experience, let's just make sure start <= end
+                if (event.target.id === 'startTime') {
+                    endTimeInput.value = start;
+                    end = start;
+                } else {
+                    startTimeInput.value = end;
+                    start = end;
+                }
+            }
+
+            startTimeLabel.textContent = formatTime(start);
+            endTimeLabel.textContent = formatTime(end);
+        }
+
+        startTimeInput.addEventListener('input', updateRange);
+        endTimeInput.addEventListener('input', updateRange);
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const url = document.getElementById('url').value;
+            const url = urlInput.value;
 
             // Update UI
             submitBtn.disabled = true;
@@ -77,13 +195,21 @@
             result.classList.add('hidden');
             statusArea.className = 'mt-6 p-4 rounded-lg bg-gray-700/50 text-sm border border-gray-600'; // Reset styles
 
+            const payload = {
+                url,
+                audioOnly: audioOnly.checked,
+                enableRange: enableRange.checked,
+                startTime: enableRange.checked ? parseInt(startTimeInput.value) : null,
+                endTime: enableRange.checked ? parseInt(endTimeInput.value) : null
+            };
+
             try {
                 const response = await fetch('/api/process', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ url })
+                    body: JSON.stringify(payload)
                 });
 
                 const data = await response.json();

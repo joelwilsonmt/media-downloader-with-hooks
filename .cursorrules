@@ -1,0 +1,4 @@
+# Project Rules
+
+- **Do not start the dev server.** The user will handle starting and stopping the dev server. If you need it running for testing (e.g., using the browser tool), ask the user to start it.
+- **Avoid manual testing in the browser.** Only use browser tools if strictly necessary for verifying complex UI logic that cannot be validated via code review or automated scripts.
