@@ -18,18 +18,22 @@ const server = fastify({
 const hookManager = new HookManager();
 
 // Determine download directory: Env var -> Docker path -> Local 'downloads' folder
-const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || (process.env.IS_DOCKER ? '/app/downloads' : path.join(process.cwd(), 'downloads'));
+const BASE_DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || (process.env.IS_DOCKER ? '/app/downloads' : path.join(process.cwd(), 'downloads'));
+const VIDEO_DIR = path.join(BASE_DOWNLOAD_DIR, 'videos');
+const AUDIO_DIR = path.join(BASE_DOWNLOAD_DIR, 'audio');
 
-// Ensure download directory exists
-if (!fs.existsSync(DOWNLOAD_DIR)) {
-  try {
-    fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
-    console.log(`[Init] Created download directory: ${DOWNLOAD_DIR}`);
-  } catch (err) {
-    console.error(`[Init] Failed to create download directory: ${DOWNLOAD_DIR}`, err);
-    process.exit(1);
+// Ensure directories exist
+[BASE_DOWNLOAD_DIR, VIDEO_DIR, AUDIO_DIR].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log(`[Init] Created directory: ${dir}`);
+    } catch (err) {
+      console.error(`[Init] Failed to create directory: ${dir}`, err);
+      process.exit(1);
+    }
   }
-}
+});
 
 // ... Binary Setup ...
 // Resolve Binary Paths
@@ -122,9 +126,11 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
     return reply.status(400).send({ error: 'URL is required' });
   }
 
+  const targetDir = audioOnly ? AUDIO_DIR : VIDEO_DIR;
+
   // Use %(title)s allows human-readable filenames.
   // When extracting audio, yt-dlp might change extension to .mp3 even if template says .mp4 or .%(ext)s
-  const outputTemplate = path.join(DOWNLOAD_DIR, '%(title)s.%(ext)s');
+  const outputTemplate = path.join(targetDir, '%(title)s.%(ext)s');
 
   function formatTimeHHMMSS(seconds: number): string {
     const h = Math.floor(seconds / 3600);
