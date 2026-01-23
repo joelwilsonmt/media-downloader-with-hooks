@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Hook, DownloadResult } from './Hook';
+import { Hook, DownloadResult, HookConfig } from './Hook';
 
 export class SlackHook implements Hook {
   name = 'SlackHook';
@@ -19,44 +19,59 @@ export class SlackHook implements Hook {
     }
   }
 
-  async execute(result: DownloadResult): Promise<void> {
-    if (!this.webhookUrl) return;
-
-    console.log('[SlackHook] Sending notification...');
+  async execute(result: DownloadResult, config?: HookConfig): Promise<void> {
+    const slackConfigs = config?.slack;
     
-    try {
-        const payload = {
-            text: `🎬 *New Video Downloaded*`,
-            blocks: [
-                {
-                    type: "section",
-                    text: {
-                        type: "mrkdwn",
-                        text: `*${result.videoTitle}*\nSource: ${result.sourceUrl}`
-                    }
-                },
-                {
-                    type: "section",
-                    fields: [
-                        {
-                            type: "mrkdwn",
-                            text: `*File:*\n${result.fileName}`
-                        },
-                        {
-                            type: "mrkdwn",
-                            text: `*Status:*\nDownloaded ✅`
-                        }
-                    ]
-                }
-            ]
-        };
-
-        await axios.post(this.webhookUrl, payload);
-        console.log('[SlackHook] Notification sent successfully.');
-    } catch (err) {
-        console.error('[SlackHook] Failed to send notification', err);
-        // We throw so HookManager knows it failed (it catches via allSettled)
-        throw err;
+    // Determine which URLs to notify: from config OR from env (if enabled)
+    const urlsToNotify: string[] = [];
+    
+    if (slackConfigs && slackConfigs.length > 0) {
+        slackConfigs.forEach((c: { webhookUrl: string }) => {
+            if (c.webhookUrl) urlsToNotify.push(c.webhookUrl);
+        });
+    } else if (this.webhookUrl) {
+        urlsToNotify.push(this.webhookUrl);
     }
+
+    if (urlsToNotify.length === 0) return;
+
+    console.log(`[SlackHook] Sending notifications to ${urlsToNotify.length} endpoint(s)...`);
+    
+    const payload = {
+        text: `🎬 *New Video Downloaded*`,
+        blocks: [
+            {
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: `*${result.videoTitle}*\nSource: ${result.sourceUrl}`
+                }
+            },
+            {
+                type: "section",
+                fields: [
+                    {
+                        type: "mrkdwn",
+                        text: `*File:*\n${result.fileName}`
+                    },
+                    {
+                        type: "mrkdwn",
+                        text: `*Status:*\nDownloaded ✅`
+                    }
+                ]
+            }
+        ]
+    };
+
+    const notifications = urlsToNotify.map(async (url) => {
+        try {
+            await axios.post(url, payload);
+            console.log(`[SlackHook] Notification sent successfully to: ${url}`);
+        } catch (err) {
+            console.error(`[SlackHook] Failed to send notification to ${url}`, err);
+        }
+    });
+
+    await Promise.allSettled(notifications);
   }
 }

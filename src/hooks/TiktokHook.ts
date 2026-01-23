@@ -1,7 +1,7 @@
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
-import { Hook, DownloadResult } from './Hook';
+import { Hook, DownloadResult, HookConfig } from './Hook';
 
 export class TiktokHook implements Hook {
   name = 'TiktokHook';
@@ -31,8 +31,11 @@ export class TiktokHook implements Hook {
     }
   }
 
-  async execute(result: DownloadResult): Promise<void> {
-    if (!this.enabled) return;
+  async execute(result: DownloadResult, config?: HookConfig): Promise<void> {
+    const tiktokConfig = config?.tiktok;
+    const accessToken = tiktokConfig?.accessToken || this.accessToken;
+
+    if (!this.enabled && !tiktokConfig?.accessToken) return;
 
     const filePath = result.filePath;
     
@@ -46,7 +49,7 @@ export class TiktokHook implements Hook {
         `${this.baseUrl}/post/publish/video/init/`,
         {
           post_info: {
-            title: result.videoTitle || path.basename(filePath),
+            title: tiktokConfig?.title || result.videoTitle || path.basename(filePath),
             privacy_level: 'SELF_ONLY', // Default to private for safety
             disable_duet: false,
             disable_comment: false,
@@ -62,7 +65,7 @@ export class TiktokHook implements Hook {
         },
         {
           headers: {
-            'Authorization': `Bearer ${this.accessToken}`,
+            'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json; charset=UTF-8',
           },
         }

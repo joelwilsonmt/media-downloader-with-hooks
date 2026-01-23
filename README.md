@@ -1,108 +1,64 @@
-# YouTube to TikTok Automator 🎥 ➡️ 📱
+# YouTube Downloader & TikTok Automator 🎥 ➡️ 📱
 
 A containerized TypeScript application designed to automate the flow of downloading content from YouTube and uploading it to TikTok. Built with **Bun**, **Fastify**, and **Docker**.
 
-## Features
+## ✨ Features
 
-- **📺 YouTube Ingestion**: Simple web interface to accept YouTube URLs.
-- **⚡️ High-Speed Download**: Uses `yt-dlp` to download videos optimized for sharing (1080p, H.264/AAC).
-- **🛠 Self-Contained**: Automatically manages dependencies. No need to manually install `ffmpeg` or `yt-dlp` on your host machine when running via Bun.
-- **📦 Docker Ready**: Fully containerized environment for easy deployment.
-- **🔁 TikTok Integration**: Includes service hooks for TikTok's Direct Post API (requires valid credentials).
-- **🔒 Safe & Stable**: Implements memory-safe logging and connection timeouts for handling long/large video files.
+- **📺 YouTube Ingestion**: Modern web interface with **iframe previews** for immediate visual verification.
+- **✂️ Time Range Selection**: Select specific segments of a video to download using an intuitive dual-handle range slider.
+- **🎵 Audio-Only Mode**: Extract high-quality **MP3** files instead of video.
+- **📂 Organized Storage**: Automatically separates files into `downloads/videos` and `downloads/audio`.
+- **⚙️ Dynamic Hook Config**: Configure TikTok, Slack, and generic webhooks directly in the UI. Settings are persisted in **localStorage**.
+- **� Automated Deployment**: Ready-to-use **GitHub Actions** for building and pushing private Docker images to GHCR.
+- **� Self-Contained**: Automatically manages dependencies. No need to manually install `ffmpeg` or `yt-dlp`.
 
-## High-Level Architecture
+## 🛠 High-Level Architecture
 
-1.  **Frontend**: A lightweight HTML interface (Tailwind CSS) for inputting URLs.
+1.  **Frontend**: A responsive Tailwind CSS interface.
 2.  **Backend**: A Fastify server running on **Bun**.
-    -   Validates and processes input.
-    -   Spawns `yt-dlp` processes to download video/audio.
-    -   Merges and optimizes media using `ffmpeg`.
-    -   Saves to a local `./downloads` directory.
-    -   Triggers a background upload task to TikTok.
+    -   Fetches video metadata (duration) via `/api/info`.
+    -   Spawns `yt-dlp` for optimized downloads (`--download-sections` for ranges).
+    -   Triggers a chain of **Hooks** (TikTok, Slack, Webhooks) after download.
 
-## Prerequisites
+## 🚀 Deployment Guide (Remote Server)
 
-- **Bun** (v1.0+) OR **Docker** & **Docker Compose**
-- A TikTok Developer account (for API credentials)
+This project is optimized for automated deployment from a **private repository**.
 
-## 🚀 Getting Started
+### 1. Build & Push (CI/CD)
+The included GitHub Action (`.github/workflows/deploy.yml`) handles this automatically:
+- Every push to `main` builds a new Docker image.
+- The image is pushed to **GitHub Container Registry (GHCR)**.
 
-### Option 1: Local Development (Fastest)
+### 2. Server Setup
+On your remote server, you only need `docker` and `docker-compose`.
 
-This project is **self-contained**. You usually do not need to install extra binaries.
-
-1.  **Clone the repo**
-2.  **Install dependencies**:
-    ```bash
-    bun install
-    ```
-3.  **Run the server**:
-    ```bash
-    bun start
-    ```
-    *Note: On the first run, it will automatically download the necessary `yt-dlp` binary to a local `./bin` folder.*
-
-4.  **Open the UI**:
-    Navigate to `http://localhost:3000`.
-
-### Option 2: Docker (Production-like)
-
-1.  **Build and Run**:
-    ```bash
-    docker-compose up --build
-    ```
-2.  **Open the UI**:
-    Navigate to `http://localhost:8080`.
-    *Note: The Docker container maps the internal `./downloads` to your host machine's configured volume.*
-
-### 🐳 Add to your own Docker Compose
-
-If you want to include this service as part of your existing stack, simply add the following to your `docker-compose.yml`:
-
-```yaml
-services:
-  youtube-downloader:
-    # If cloning the repo locally
-    build: 
-      context: ./path/to/youtube-downloader-repo
-    # OR if you have built an image
-    # image: youtube-downloader:latest
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./downloads:/app/downloads
-    # You can set variables here directly to override .env
-    environment:
-      - ENABLE_TIKTOK=true
-      - TIKTOK_ACCESS_TOKEN=your_token_here
-      - ENABLE_SLACK=true
-      - SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx
-    env_file:
-      - .env
-    restart: unless-stopped
-```
-
-## ⚙️ Configuration
-
-Copy `.env.example` to `.env` and configure your keys:
-
+#### Authentication
+Login once to GHCR using a **Personal Access Token (PAT)**:
 ```bash
-cp .env.example .env
+echo "YOUR_PAT_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 ```
 
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `PORT` | Server backend port | `3000` |
-| `TIKTOK_CLIENT_KEY` | TikTok API Client Key | - |
-| `TIKTOK_CLIENT_SECRET`| TikTok API Client Secret | - |
-| `TIKTOK_ACCESS_TOKEN` | Direct Post Access Token | - |
+#### Launch
+Create a folder, add your `.env`, and use the provided `docker-compose.yml`:
+```bash
+# Start the service
+docker-compose up -d
+```
+> [!TIP]
+> Make sure to update the `image` field in `docker-compose.yml` to point to your repository.
 
-## 📁 Output
+## ⚙️ Configuration (UI)
 
-Videos are saved to the `./downloads` folder in the project root.
-- **Format**: `.mp4` (H.264 Video / AAC Audio)
-- **Resolution**: Capped at 1080p for optimal compatibility and speed.
+Instead of hardcoding credentials in `.env`, you can now use the **Settings Modal** (gear icon) in the web UI. These settings are stored in your browser and used for all requests:
+- **TikTok**: Client Key, Secret, and Access Token.
+- **Slack**: Supports multiple webhook URLs.
+- **Generic Webhooks**: Supports multiple callback URLs.
+
+## 📁 Output Structure
+
+All downloads are saved under the path defined by `DOWNLOAD_DIR`:
+- `/videos/`: Full or partial video downloads (.mp4)
+- `/audio/`: High-quality audio extraction (.mp3)
 
 ## 🤝 Contributing
 

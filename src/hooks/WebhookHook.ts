@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Hook, DownloadResult } from './Hook';
+import { Hook, DownloadResult, HookConfig } from './Hook';
 
 export class WebhookHook implements Hook {
   name = 'WebhookHook';
@@ -12,17 +12,31 @@ export class WebhookHook implements Hook {
     }
   }
 
-  async execute(result: DownloadResult): Promise<void> {
-    if (!this.targetUrl) return;
-
-    console.log(`[WebhookHook] Posting to ${this.targetUrl}...`);
+  async execute(result: DownloadResult, config?: HookConfig): Promise<void> {
+    const webhookConfigs = config?.webhook;
     
-    try {
-        await axios.post(this.targetUrl, result);
-        console.log('[WebhookHook] Post successful.');
-    } catch (err) {
-        console.error('[WebhookHook] Failed to post to webhook', err);
-        throw err;
+    const urlsToNotify: string[] = [];
+    if (webhookConfigs && webhookConfigs.length > 0) {
+        webhookConfigs.forEach((c: { url: string }) => {
+            if (c.url) urlsToNotify.push(c.url);
+        });
+    } else if (this.targetUrl) {
+        urlsToNotify.push(this.targetUrl);
     }
+
+    if (urlsToNotify.length === 0) return;
+
+    console.log(`[WebhookHook] Posting to ${urlsToNotify.length} endpoint(s)...`);
+    
+    const notifications = urlsToNotify.map(async (url) => {
+        try {
+            await axios.post(url, result);
+            console.log(`[WebhookHook] Post successful to: ${url}`);
+        } catch (err) {
+            console.error(`[WebhookHook] Failed to post to webhook: ${url}`, err);
+        }
+    });
+
+    await Promise.allSettled(notifications);
   }
 }

@@ -4,6 +4,7 @@ import fs from 'fs';
 import { spawn } from 'child_process';
 import dotenv from 'dotenv';
 import { HookManager } from './hooks/HookManager';
+import { HookConfig } from './hooks/Hook';
 import ffmpegStatic from 'ffmpeg-static';
 
 dotenv.config();
@@ -64,6 +65,7 @@ interface ProcessRequest {
   enableRange?: boolean;
   startTime?: number; // in seconds
   endTime?: number;   // in seconds
+  hookConfig?: HookConfig;
 }
 
 interface InfoRequest {
@@ -120,7 +122,7 @@ server.get<{ Querystring: InfoRequest }>('/api/info', async (request, reply) => 
 
 // Process Route
 server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => {
-  const { url, audioOnly, enableRange, startTime, endTime } = request.body;
+  const { url, audioOnly, enableRange, startTime, endTime, hookConfig } = request.body;
 
   if (!url) {
     return reply.status(400).send({ error: 'URL is required' });
@@ -263,7 +265,7 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
           fileName: downloadedFile,
           videoTitle: videoTitle,
           sourceUrl: url
-      }).then(() => console.log('Hooks processing completed'))
+      }, hookConfig).then(() => console.log('Hooks processing completed'))
         .catch(err => console.error('Hooks processing had errors', err));
 
       return resolve(reply.send({ 

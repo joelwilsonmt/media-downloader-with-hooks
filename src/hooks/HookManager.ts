@@ -1,4 +1,4 @@
-import { Hook, DownloadResult } from './Hook';
+import { Hook, DownloadResult, HookConfig } from './Hook';
 import { TiktokHook } from './TiktokHook';
 import { SlackHook } from './SlackHook';
 import { WebhookHook } from './WebhookHook';
@@ -37,13 +37,13 @@ export class HookManager {
     await Promise.all(initPromises);
   }
 
-  public async notify(result: DownloadResult) {
+  public async notify(result: DownloadResult, config?: HookConfig) {
     console.log(`[HookManager] Notifying hooks for: ${result.fileName}`);
     
     // we use allSettled so one failure doesn't stop others
     const results = await Promise.allSettled(this.hooks.map(async (hook) => {
       console.log(`[HookManager] Executing hook: ${hook.name}`);
-      await hook.execute(result);
+      await hook.execute(result, config);
     }));
 
     results.forEach((res, index) => {
