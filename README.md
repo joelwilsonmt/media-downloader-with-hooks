@@ -14,6 +14,18 @@ A containerized TypeScript application designed to automate the flow of download
 - **☁️ Automated Deployment**: Ready-to-use **GitHub Actions** for building and pushing images to GHCR. View deployments in the [Actions](https://github.com/joelwilsonmt/media-downloader-with-hooks/actions) tab or the [Packages](https://github.com/joelwilsonmt/media-downloader-with-hooks/pkgs/container/media-downloader-with-hooks) section.
 - **🛠 Self-Contained**: Automatically manages dependencies. No need to manually install `ffmpeg` or `yt-dlp`.
 
+## 🌊 The Workflow
+
+It's as simple as **Copy, Paste, Play**. Here is how the magic happens:
+
+1.  **🔗 Copy & Paste**: Grab any URL from **YouTube**, **TikTok**, or **SoundCloud**. 
+2.  **⚡️ Instant Processing**: Paste it into the downloader. The system immediately grabs the metadata and generates a preview.
+3.  **📂 Auto-Organization**: Your media is automatically routed to your monitored **Jellyfin** library:
+    -   `/audio/` for high-fidelity sound (Auto-WAV for SoundCloud).
+    -   `/videos/` for premium quality video.
+4.  **📺 Real-Time Sync**: Content appears in Jellyfin in near real-time, ready to stream across all your devices.
+5.  **💎 Forever Ad-Free**: Build a permanent, ad-free archive of your favorite media. (Tested flawlessly with videos exceeding 90 minutes).
+
 ## 🛠 High-Level Architecture
 
 1.  **Frontend**: A responsive Tailwind CSS interface.
