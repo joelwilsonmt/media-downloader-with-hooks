@@ -37,13 +37,13 @@
 
         <form id="processForm" class="space-y-6">
             <div>
-                <label for="url" class="block text-sm font-medium text-gray-300 mb-2">Video URL (YouTube or TikTok)</label>
+                <label for="url" class="block text-sm font-medium text-gray-300 mb-2">Video or Audio URL (YouTube, TikTok, SoundCloud)</label>
                 <input 
                     type="url" 
                     id="url" 
                     required 
                     class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder-gray-500"
-                    placeholder="https://www.youtube.com/watch?v=... or https://www.tiktok.com/@user/video/..."
+                    placeholder="YouTube, TikTok, or SoundCloud URL..."
                 >
             </div>
 
@@ -259,16 +259,28 @@
             return match ? match[1] : null;
         }
 
+        // Helper: Extract SoundCloud URL (just check if it is SC)
+        function isSoundCloud(url) {
+            return url.toLowerCase().includes('soundcloud.com');
+        }
+
         // Handle URL changes
         urlInput.addEventListener('input', async () => {
             const ytId = getYouTubeID(urlInput.value);
             const ttId = getTikTokID(urlInput.value);
+            const isSc = isSoundCloud(urlInput.value);
 
             let previewUrl = '';
             if (ytId) {
                 previewUrl = `https://www.youtube.com/embed/${ytId}?autoplay=0`;
             } else if (ttId) {
                 previewUrl = `https://www.tiktok.com/embed/v2/${ttId}`;
+            } else if (isSc) {
+                previewUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(urlInput.value)}&color=%23ff5500&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`;
+                // SoundCloud is audio only, auto-select the checkbox
+                audioOnly.checked = true;
+                // Since SC doesn't usually have a meaningful duration for cutting as easily as video in this UI,
+                // we'll still try to fetch duration but SC is best downloaded whole.
             }
 
             if (previewUrl) {

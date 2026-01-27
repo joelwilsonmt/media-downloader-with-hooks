@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { HookManager } from './hooks/HookManager';
 import { HookConfig } from './hooks/Hook';
 import ffmpegStatic from 'ffmpeg-static';
+import ffprobeStatic from 'ffprobe-static';
 
 dotenv.config();
 
@@ -43,6 +44,7 @@ const PROJECT_ROOT = process.cwd();
 const localYtDlp = path.join(PROJECT_ROOT, 'bin', 'yt-dlp');
 const YT_DLP_PATH = fs.existsSync(localYtDlp) ? localYtDlp : 'yt-dlp';
 const FFMPEG_PATH = ffmpegStatic || 'ffmpeg';
+const FFPROBE_PATH = ffprobeStatic.path || 'ffprobe';
 
 // ... Server Routes ...
 
@@ -128,35 +130,41 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
     return reply.status(400).send({ error: 'URL is required' });
   }
 
-  const targetDir = audioOnly ? AUDIO_DIR : VIDEO_DIR;
+    const isSoundCloud = url.toLowerCase().includes('soundcloud.com');
+    const effectiveAudioOnly = audioOnly || isSoundCloud;
+    const targetDir = effectiveAudioOnly ? AUDIO_DIR : VIDEO_DIR;
 
-  // Use %(title)s allows human-readable filenames.
-  // When extracting audio, yt-dlp might change extension to .mp3 even if template says .mp4 or .%(ext)s
-  const outputTemplate = path.join(targetDir, '%(title)s.%(ext)s');
+    // Use %(title)s allows human-readable filenames.
+    // When extracting audio, yt-dlp might change extension to .mp3 even if template says .mp4 or .%(ext)s
+    const outputTemplate = path.join(targetDir, '%(title)s.%(ext)s');
 
-  function formatTimeHHMMSS(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
+    function formatTimeHHMMSS(seconds: number): string {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
 
-  return new Promise((resolve, _reject) => {
-    // Spawn yt-dlp process
-    console.log(`[Processor] Request for: ${url} (AudioOnly: ${!!audioOnly}, Range: ${!!enableRange})`);
-    console.log(`[Processor] Using binaries: yt-dlp='${YT_DLP_PATH}', ffmpeg='${FFMPEG_PATH}'`);
+    return new Promise((resolve, _reject) => {
+      // Spawn yt-dlp process
+      console.log(`[Processor] Request for: ${url} (AudioOnly: ${!!effectiveAudioOnly}, Range: ${!!enableRange}, SoundCloud: ${isSoundCloud})`);
+      console.log(`[Processor] Using binaries: yt-dlp='${YT_DLP_PATH}', ffmpeg='${FFMPEG_PATH}', ffprobe='${FFPROBE_PATH}'`);
 
     const args = [
-      '--ffmpeg-location', FFMPEG_PATH,
       '--no-playlist',
       '--print', 'after_move:filepath',
       '--no-simulate',
       '-o', outputTemplate,
     ];
 
-    if (audioOnly) {
-        // Extract audio, highest quality mp3 (around 128-320kbps depending on source)
-        args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
+    if (effectiveAudioOnly) {
+        if (isSoundCloud) {
+            // Extract highest quality wav for SoundCloud
+            args.push('-x', '--audio-format', 'wav');
+        } else {
+            // Extract highest quality mp3 for others
+            args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
+        }
     } else {
         // Video optimization
         args.push('-f', 'bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best');
@@ -173,7 +181,13 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
 
     args.push(url);
 
-    const ytDlp = spawn(YT_DLP_PATH, args);
+    // Extend PATH to include ffmpeg and ffprobe directories
+    const env = { 
+        ...process.env, 
+        PATH: `${path.dirname(FFMPEG_PATH)}${path.delimiter}${path.dirname(FFPROBE_PATH)}${path.delimiter}${process.env.PATH}` 
+    };
+
+    const ytDlp = spawn(YT_DLP_PATH, args, { env });
 
     let finalFilePath = ''; // Will be captured from stdout
     const logs: string[] = [];
@@ -198,9 +212,9 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
         addLog(logs, trimmed);
 
         // Robust check:
-        // Capture any absolute path ending with .mp4 or .mp3 
+        // Capture any absolute path ending with .mp4, .mp3, or .wav
         // (yt-dlp --print after_move:filepath will output this)
-        if ((trimmed.endsWith('.mp4') || trimmed.endsWith('.mp3')) && path.isAbsolute(trimmed)) {
+        if ((trimmed.endsWith('.mp4') || trimmed.endsWith('.mp3') || trimmed.endsWith('.wav')) && path.isAbsolute(trimmed)) {
             finalFilePath = trimmed;
         }
     };
