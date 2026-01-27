@@ -1,5 +1,5 @@
 {
-  "name": "youtube-to-tiktok-automator",
+  "name": "media-downloader-with-hooks",
   "version": "1.0.0",
   "description": "Automate YouTube downloads and TikTok uploads",
   "main": "src/server.ts",
