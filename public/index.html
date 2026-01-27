@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube to TikTok Processor</title>
+    <title>Video Processor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -24,7 +24,7 @@
         <div class="flex justify-between items-start mb-2">
             <div class="w-8"></div> <!-- Spacer -->
             <h1 class="text-3xl font-bold text-center bg-gradient-to-r from-secondary to-primary bg-clip-text text-transparent">
-                YT ➜ TikTok
+                Video ➜ Processor
             </h1>
             <button id="settingsBtn" class="text-gray-400 hover:text-white transition-colors p-1">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -37,19 +37,19 @@
 
         <form id="processForm" class="space-y-6">
             <div>
-                <label for="url" class="block text-sm font-medium text-gray-300 mb-2">YouTube URL</label>
+                <label for="url" class="block text-sm font-medium text-gray-300 mb-2">Video URL (YouTube or TikTok)</label>
                 <input 
                     type="url" 
                     id="url" 
                     required 
                     class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder-gray-500"
-                    placeholder="https://www.youtube.com/watch?v=..."
+                    placeholder="https://www.youtube.com/watch?v=... or https://www.tiktok.com/@user/video/..."
                 >
             </div>
 
-            <!-- YouTube Preview -->
+            <!-- Video Preview -->
             <div id="previewContainer" class="hidden aspect-video w-full rounded-lg overflow-hidden border border-gray-700 bg-black">
-                <iframe id="youtubePreview" class="w-full h-full" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                <iframe id="videoPreview" class="w-full h-full" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
             </div>
 
             <div class="grid grid-cols-2 gap-4">
@@ -154,7 +154,7 @@
         const result = document.getElementById('result');
         const urlInput = document.getElementById('url');
         const previewContainer = document.getElementById('previewContainer');
-        const youtubePreview = document.getElementById('youtubePreview');
+        const videoPreview = document.getElementById('videoPreview');
         const enableRange = document.getElementById('enableRange');
         const rangeContainer = document.getElementById('rangeContainer');
         const audioOnly = document.getElementById('audioOnly');
@@ -245,18 +245,34 @@
             return `${m}:${s.toString().padStart(2, '0')}`;
         }
 
-        // Helper: Extract Video ID
+        // Helper: Extract YouTube Video ID
         function getYouTubeID(url) {
             const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
             const match = url.match(regExp);
             return (match && match[2].length === 11) ? match[2] : null;
         }
 
+        // Helper: Extract TikTok Video ID
+        function getTikTokID(url) {
+            const regExp = /\/video\/(\d+)/;
+            const match = url.match(regExp);
+            return match ? match[1] : null;
+        }
+
         // Handle URL changes
         urlInput.addEventListener('input', async () => {
-            const videoId = getYouTubeID(urlInput.value);
-            if (videoId) {
-                youtubePreview.src = `https://www.youtube.com/embed/${videoId}?autoplay=0`;
+            const ytId = getYouTubeID(urlInput.value);
+            const ttId = getTikTokID(urlInput.value);
+
+            let previewUrl = '';
+            if (ytId) {
+                previewUrl = `https://www.youtube.com/embed/${ytId}?autoplay=0`;
+            } else if (ttId) {
+                previewUrl = `https://www.tiktok.com/embed/v2/${ttId}`;
+            }
+
+            if (previewUrl) {
+                videoPreview.src = previewUrl;
                 previewContainer.classList.remove('hidden');
 
                 // Fetch video duration
@@ -276,7 +292,7 @@
                 }
             } else {
                 previewContainer.classList.add('hidden');
-                youtubePreview.src = '';
+                videoPreview.src = '';
             }
         });
 
