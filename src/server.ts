@@ -1,12 +1,12 @@
 import fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import path from 'path';
 import fs from 'fs';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import dotenv from 'dotenv';
 import { HookManager } from './hooks/HookManager';
 import { HookConfig } from './hooks/Hook';
 import ffmpegStatic from 'ffmpeg-static';
-import ffprobeStatic from 'ffprobe-static';
+import * as ffprobeStatic from 'ffprobe-static';
 
 dotenv.config();
 
@@ -88,6 +88,7 @@ server.get<{ Querystring: InfoRequest }>('/api/info', async (request, reply) => 
     const args = [
       '--no-playlist',
       '--print', 'duration',
+      '--js-runtimes', 'bun',
       url
     ];
 
@@ -154,6 +155,7 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
       '--no-playlist',
       '--print', 'after_move:filepath',
       '--no-simulate',
+      '--js-runtimes', 'bun',
       '-o', outputTemplate,
     ];
 
@@ -293,12 +295,25 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
 
 const start = async () => {
   try {
+    // Initialize hooks
+    await hookManager.init();
+
     const port = parseInt(process.env.PORT || '3000');
     // Listen on all interfaces for Docker
     await server.listen({ port, host: '0.0.0.0' });
     server.log.info(`Server running on port ${port}`);
     server.log.info(`yt-dlp: ${YT_DLP_PATH}`);
+    
+    // Log version info for debugging
+    try {
+        const version = execSync(`"${YT_DLP_PATH}" --version`).toString().trim();
+        server.log.info(`yt-dlp version: ${version}`);
+    } catch (e) {
+        server.log.warn('Could not determine yt-dlp version');
+    }
+
     server.log.info(`ffmpeg: ${FFMPEG_PATH}`);
+    server.log.info(`ffprobe: ${FFPROBE_PATH}`);
   } catch (err) {
     server.log.error(err);
     process.exit(1);

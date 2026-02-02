@@ -22,6 +22,7 @@
     "pump": "^3.0.0"
   },
   "devDependencies": {
+    "@types/ffprobe-static": "^2.0.3",
     "@types/fluent-ffmpeg": "^2.1.24",
     "@types/node": "^20.8.10",
     "@typescript-eslint/eslint-plugin": "^7.0.0",

@@ -18,12 +18,10 @@ async function setup() {
         fs.mkdirSync(BIN_DIR, { recursive: true });
     }
 
-    // Check yt-dlp
+    // Check and Update yt-dlp
     if (!fs.existsSync(YT_DLP_PATH)) {
         console.log('[Setup] yt-dlp not found locally. Downloading...');
         try {
-            // Using curl via exec because it's reliable and installed on most devs/mac
-            // Alternatively could use fetch and fs write, but keeping permissions correct is easier with curl/chmod
             execSync(`curl -L ${YT_DLP_URL} -o "${YT_DLP_PATH}"`);
             fs.chmodSync(YT_DLP_PATH, 0o755);
             console.log('[Setup] yt-dlp downloaded and made executable.');
@@ -32,7 +30,14 @@ async function setup() {
             process.exit(1);
         }
     } else {
-        console.log('[Setup] yt-dlp found locally.');
+        console.log('[Setup] yt-dlp found locally. Checking for updates...');
+        try {
+            // Use the built-in update command
+            execSync(`"${YT_DLP_PATH}" -U`);
+            console.log('[Setup] yt-dlp update check completed.');
+        } catch (error) {
+            console.warn('[Setup] Failed to update yt-dlp (continuing with existing version):', error);
+        }
     }
 
     // Check ffmpeg
@@ -46,6 +51,19 @@ async function setup() {
         }
     } catch (e) {
         console.warn('[Setup] ffmpeg-static not installed?');
+    }
+
+    // Check ffprobe
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const ffprobeStatic = require('ffprobe-static');
+        if (ffprobeStatic && ffprobeStatic.path && fs.existsSync(ffprobeStatic.path)) {
+             console.log(`[Setup] ffprobe-static found at: ${ffprobeStatic.path}`);
+        } else {
+             console.warn('[Setup] ffprobe-static not resolving correctly.');
+        }
+    } catch (e) {
+        console.warn('[Setup] ffprobe-static not installed?');
     }
 }
 
