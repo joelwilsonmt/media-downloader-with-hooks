@@ -69,6 +69,7 @@ interface ProcessRequest {
   endTime?: number;   // in seconds
   hookConfig?: HookConfig;
   cookies?: string;
+  subFolder?: string;
 }
 
 interface InfoRequest {
@@ -143,9 +144,33 @@ server.post<{ Body: InfoRequest }>('/api/info', async (request, reply) => {
   });
 });
 
+// List Sub-folders Route
+server.get<{ Querystring: { type: 'audio' | 'video' } }>('/api/sub-folders', async (request, reply) => {
+  const { type } = request.query;
+  const targetParent = type === 'audio' ? AUDIO_DIR : VIDEO_DIR;
+
+  try {
+    if (!fs.existsSync(targetParent)) {
+      console.log(`[Subfolders] Parent not found: ${targetParent}`);
+      return reply.send([]);
+    }
+    
+    const items = fs.readdirSync(targetParent, { withFileTypes: true });
+    const subdirs = items
+      .filter(item => item.isDirectory())
+      .map(item => item.name);
+    
+    console.log(`[Subfolders] Listed for ${type}: ${subdirs.join(', ')}`);
+    return reply.send(subdirs);
+  } catch (err) {
+    console.error(`[Subfolders] Failed to list: ${err}`);
+    return reply.status(500).send({ error: 'Failed to list sub-folders' });
+  }
+});
+
 // Process Route
 server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => {
-  const { url, audioOnly, enableRange, startTime, endTime, hookConfig, cookies } = request.body;
+  const { url, audioOnly, enableRange, startTime, endTime, hookConfig, cookies, subFolder } = request.body;
 
   if (!url) {
     return reply.status(400).send({ error: 'URL is required' });
@@ -153,7 +178,15 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
 
     const isSoundCloud = url.toLowerCase().includes('soundcloud.com');
     const effectiveAudioOnly = audioOnly || isSoundCloud;
-    const targetDir = effectiveAudioOnly ? AUDIO_DIR : VIDEO_DIR;
+    let targetDir = effectiveAudioOnly ? AUDIO_DIR : VIDEO_DIR;
+
+    if (subFolder && subFolder.trim()) {
+        targetDir = path.join(targetDir, subFolder.trim());
+        if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+            console.log(`[Processor] Created sub-folder: ${targetDir}`);
+        }
+    }
 
     // Use %(title)s allows human-readable filenames.
     // When extracting audio, yt-dlp might change extension to .mp3 even if template says .mp4 or .%(ext)s

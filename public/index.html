@@ -47,6 +47,29 @@
                 >
             </div>
 
+            <div id="subFolderSection" class="max-h-0 overflow-visible transition-all duration-500 opacity-0 mb-0 invisible">
+                <label for="subFolder" class="block text-sm font-medium text-gray-300 mb-2 italic">Organize into Sub-folder (Optional)</label>
+                <div class="relative group">
+                    <input 
+                        type="text" 
+                        id="subFolder" 
+                        autocomplete="off"
+                        class="w-full pl-4 pr-10 py-2 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-secondary focus:border-transparent outline-none transition-all placeholder-gray-500 text-sm"
+                        placeholder="e.g. Music, Tutorials, Clips..."
+                    >
+                    <button type="button" id="toggleSubFolders" class="absolute right-0 top-0 h-full px-3 text-gray-500 hover:text-secondary transition-colors" title="Show existing folders">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+                    <!-- Custom Dropdown Menu -->
+                    <div id="subFolderMenu" class="hidden absolute left-0 z-[100] w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl max-h-48 overflow-y-auto">
+                        <div id="subFolderList" class="p-1"></div>
+                    </div>
+                </div>
+                <div class="h-6"></div> <!-- Spacer for animation flow -->
+            </div>
+
             <!-- Video Preview -->
             <div id="previewContainer" class="hidden aspect-video w-full rounded-lg overflow-hidden border border-gray-700 bg-black relative flex items-center justify-center">
                 <div id="previewLoading" class="hidden flex flex-col items-center space-y-3">
@@ -133,8 +156,8 @@
                 <div class="space-y-3">
                     <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">TikTok</h3>
                     <input type="text" id="ttKey" placeholder="Client Key" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-secondary">
-                    <input type="password" id="ttSecret" placeholder="Client Secret" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-secondary">
-                    <input type="password" id="ttToken" placeholder="Access Token" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-secondary">
+                    <input type="password" id="ttSecret" autocomplete="current-password" placeholder="Client Secret" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-secondary">
+                    <input type="password" id="ttToken" autocomplete="current-password" placeholder="Access Token" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-secondary">
                 </div>
 
                 <div class="h-px bg-gray-700 my-4"></div>
@@ -180,6 +203,11 @@
         const loading = document.getElementById('loading');
         const result = document.getElementById('result');
         const urlInput = document.getElementById('url');
+        const subFolderInput = document.getElementById('subFolder');
+        const subFolderSection = document.getElementById('subFolderSection');
+        const toggleSubFolders = document.getElementById('toggleSubFolders');
+        const subFolderMenu = document.getElementById('subFolderMenu');
+        const subFolderList = document.getElementById('subFolderList');
         const previewContainer = document.getElementById('previewContainer');
         const previewLoading = document.getElementById('previewLoading');
         const videoPreview = document.getElementById('videoPreview');
@@ -324,7 +352,10 @@
                 videoPreview.classList.add('hidden');
                 thumbnailFallback.classList.add('hidden');
                 restrictedBadge.classList.add('hidden');
-                // We DON'T set videoPreview.src yet to prevent flash
+                
+                // Reset subfolder visibility on new URL
+                subFolderSection.classList.add('max-h-0', 'opacity-0', 'invisible');
+                subFolderSection.classList.remove('max-h-40', 'opacity-100', 'mb-6');
 
                 // Fetch video duration
                 try {
@@ -348,6 +379,12 @@
                         endTimeInput.value = duration;
                         endTimeLabel.textContent = formatTime(duration);
                         console.log(`[Frontend] Duration synced: ${duration}s`);
+                        
+                        // Show Sub-folder section with animation
+                        console.log(`[Frontend] Animating sub-folder section...`);
+                        subFolderSection.classList.remove('max-h-0', 'opacity-0', 'invisible');
+                        subFolderSection.classList.add('max-h-40', 'opacity-100', 'mb-6');
+                        refreshSubFolderSuggestions();
                     }
                     
                     // Handle thumbnail fallback for restricted videos
@@ -384,6 +421,10 @@
                 restrictedBadge.classList.add('hidden');
                 videoPreview.classList.remove('hidden');
                 previewLoading.classList.add('hidden');
+                
+                // Hide subfolder section
+                subFolderSection.classList.add('max-h-0', 'opacity-0', 'invisible');
+                subFolderSection.classList.remove('max-h-40', 'opacity-100', 'mb-6');
             }
         });
 
@@ -434,6 +475,7 @@
             const payload = {
                 url,
                 audioOnly: audioOnly.checked,
+                subFolder: subFolderInput.value,
                 enableRange: enableRange.checked,
                 startTime: enableRange.checked ? parseInt(startTimeInput.value) : null,
                 endTime: enableRange.checked ? parseInt(endTimeInput.value) : null,
@@ -466,7 +508,97 @@
                 loading.classList.add('hidden');
                 result.classList.remove('hidden');
                 submitBtn.disabled = false;
+                // Refresh suggestions after a success (might have created a new folder)
+                refreshSubFolderSuggestions();
             }
+        });
+
+        // Sub-folder handling
+        let existingFolders = [];
+
+        async function refreshSubFolderSuggestions() {
+            const isAudio = audioOnly.checked || isSoundCloud(urlInput.value);
+            const type = isAudio ? 'audio' : 'video';
+            console.log(`[Frontend] [refreshSubFolderSuggestions] Fetching for type: ${type}`);
+            try {
+                const res = await fetch(`/api/sub-folders?type=${type}`);
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                existingFolders = await res.json();
+                console.log(`[Frontend] [refreshSubFolderSuggestions] Success! Received:`, existingFolders);
+                renderSubFolderList(subFolderInput.value || '');
+            } catch (err) {
+                console.error('[Frontend] [refreshSubFolderSuggestions] ERROR:', err);
+            }
+        }
+
+        function renderSubFolderList(filter = '') {
+            console.log(`[Frontend] [renderSubFolderList] Filtering for: "${filter}"`);
+            const filtered = existingFolders.filter(f => f.toLowerCase().includes(filter.toLowerCase()));
+            console.log(`[Frontend] [renderSubFolderList] Matches: ${filtered.length}`);
+            
+            if (filtered.length === 0) {
+                subFolderList.innerHTML = `
+                    <div class="px-3 py-3 text-gray-500 text-xs text-center border-b border-gray-700 last:border-0 italic">
+                        ${filter ? 'No matching folders' : 'No existing folders found'}
+                    </div>
+                `;
+            } else {
+                subFolderList.innerHTML = filtered.map(f => `
+                    <div class="folder-option px-3 py-2.1 hover:bg-secondary/20 hover:text-secondary rounded cursor-pointer text-sm transition-colors border-b border-gray-700 last:border-0" data-name="${f}">
+                        ${f}
+                    </div>
+                `).join('');
+                
+                // Add click listeners to options
+                document.querySelectorAll('.folder-option').forEach(opt => {
+                    opt.onclick = () => {
+                        const name = opt.getAttribute('data-name');
+                        console.log(`[Frontend] Selected folder: ${name}`);
+                        subFolderInput.value = name;
+                        subFolderMenu.classList.add('hidden');
+                    };
+                });
+            }
+        }
+
+        subFolderInput.addEventListener('input', (e) => {
+            subFolderMenu.classList.remove('hidden');
+            renderSubFolderList(e.target.value);
+        });
+
+        subFolderInput.addEventListener('focus', () => {
+             console.log('[Frontend] Sub-folder focus');
+             subFolderMenu.classList.remove('hidden');
+             renderSubFolderList(subFolderInput.value || '');
+        });
+
+        toggleSubFolders.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isHidden = subFolderMenu.classList.contains('hidden');
+            console.log(`[Frontend] Toggle chevron click. State before: ${isHidden ? 'hidden' : 'visible'}`);
+            
+            if (isHidden) {
+                subFolderMenu.classList.remove('hidden');
+                renderSubFolderList(subFolderInput.value || '');
+                subFolderInput.focus();
+            } else {
+                subFolderMenu.classList.add('hidden');
+            }
+        });
+
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!subFolderInput.contains(e.target) && !subFolderMenu.contains(e.target) && !toggleSubFolders.contains(e.target)) {
+                if (!subFolderMenu.classList.contains('hidden')) {
+                    console.log('[Frontend] Closing menu (click outside)');
+                    subFolderMenu.classList.add('hidden');
+                }
+            }
+        });
+
+        audioOnly.addEventListener('change', () => {
+            console.log('[Frontend] audioOnly toggle change');
+            refreshSubFolderSuggestions();
         });
     </script>
 </body>
