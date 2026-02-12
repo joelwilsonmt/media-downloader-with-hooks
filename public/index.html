@@ -48,8 +48,17 @@
             </div>
 
             <!-- Video Preview -->
-            <div id="previewContainer" class="hidden aspect-video w-full rounded-lg overflow-hidden border border-gray-700 bg-black">
+            <div id="previewContainer" class="hidden aspect-video w-full rounded-lg overflow-hidden border border-gray-700 bg-black relative flex items-center justify-center">
+                <div id="previewLoading" class="hidden flex flex-col items-center space-y-3">
+                    <svg class="animate-spin h-8 w-8 text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span class="text-xs text-gray-400 font-medium">Fetching preview...</span>
+                </div>
                 <iframe id="videoPreview" class="w-full h-full" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                <img id="thumbnailFallback" class="hidden w-full h-full object-cover" src="" alt="Video Thumbnail">
+                <div id="restrictedBadge" class="hidden absolute top-2 right-2 bg-red-600 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-widest shadow-lg">Restricted Preview (Static)</div>
             </div>
 
             <div class="grid grid-cols-2 gap-4">
@@ -148,6 +157,14 @@
                     <div id="webhookContainer" class="space-y-2"></div>
                 </div>
 
+                <div class="h-px bg-gray-700 my-4"></div>
+
+                <div class="space-y-3">
+                    <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">YouTube Cookies</h3>
+                    <p class="text-[10px] text-gray-500 italic">Paste Netscape/txt format cookies for age-restricted content</p>
+                    <textarea id="ytCookies" placeholder="Paste cookies here..." class="w-full h-24 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-secondary font-mono"></textarea>
+                </div>
+
                 <div class="flex space-x-3 pt-4">
                     <button type="button" id="closeSettings" class="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded font-medium transition-colors">Cancel</button>
                     <button type="submit" class="flex-1 py-2 bg-secondary text-gray-900 hover:bg-cyan-400 rounded font-bold transition-colors">Save Changes</button>
@@ -164,7 +181,10 @@
         const result = document.getElementById('result');
         const urlInput = document.getElementById('url');
         const previewContainer = document.getElementById('previewContainer');
+        const previewLoading = document.getElementById('previewLoading');
         const videoPreview = document.getElementById('videoPreview');
+        const thumbnailFallback = document.getElementById('thumbnailFallback');
+        const restrictedBadge = document.getElementById('restrictedBadge');
         const enableRange = document.getElementById('enableRange');
         const rangeContainer = document.getElementById('rangeContainer');
         const audioOnly = document.getElementById('audioOnly');
@@ -223,6 +243,9 @@
             } else if (config.webhook?.url) { // Backwards compat
                 addHookRow('webhookContainer', 'Callback URL', config.webhook.url);
             }
+
+            // Load Cookies
+            document.getElementById('ytCookies').value = config.youtubeCookies || '';
         }
         loadSettings();
 
@@ -242,7 +265,8 @@
                     accessToken: document.getElementById('ttToken').value
                 },
                 slack,
-                webhook
+                webhook,
+                youtubeCookies: document.getElementById('ytCookies').value
             };
             localStorage.setItem('hookConfig', JSON.stringify(config));
             settingsModal.classList.add('hidden');
@@ -294,13 +318,29 @@
             }
 
             if (previewUrl) {
-                videoPreview.src = previewUrl;
+                // Prepare for preview load
                 previewContainer.classList.remove('hidden');
+                previewLoading.classList.remove('hidden');
+                videoPreview.classList.add('hidden');
+                thumbnailFallback.classList.add('hidden');
+                restrictedBadge.classList.add('hidden');
+                // We DON'T set videoPreview.src yet to prevent flash
 
                 // Fetch video duration
                 try {
-                    const response = await fetch(`/api/info?url=${encodeURIComponent(urlInput.value)}`);
+                    const config = JSON.parse(localStorage.getItem('hookConfig') || '{}');
+                    const cookies = config.youtubeCookies || '';
+                    
+                    const response = await fetch('/api/info', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: urlInput.value, cookies })
+                    });
                     const data = await response.json();
+                    
+                    // Finalize preview choice
+                    previewLoading.classList.add('hidden');
+                    
                     if (data.duration) {
                         const duration = data.duration;
                         startTimeInput.max = duration;
@@ -309,12 +349,41 @@
                         endTimeLabel.textContent = formatTime(duration);
                         console.log(`[Frontend] Duration synced: ${duration}s`);
                     }
+                    
+                    // Handle thumbnail fallback for restricted videos
+                    if (data.thumbnail) {
+                        thumbnailFallback.src = data.thumbnail;
+                        
+                        // Heuristic: If we are using cookies and it's YouTube, the iframe might be restricted.
+                        // We show the thumbnail fallback instead of the broken iframe.
+                        if (ytId && cookies.trim()) {
+                            videoPreview.src = ''; // Ensure iframe doesn't load
+                            thumbnailFallback.classList.remove('hidden');
+                            restrictedBadge.classList.remove('hidden');
+                        } else {
+                            videoPreview.src = previewUrl; // Now it's safe to load
+                            videoPreview.classList.remove('hidden');
+                        }
+                    } else if (previewUrl) {
+                        // Fallback if no thumbnail but we have preview URL (SoundCloud/TikTok/Normal YT)
+                        videoPreview.src = previewUrl;
+                        videoPreview.classList.remove('hidden');
+                    }
                 } catch (err) {
                     console.error('[Frontend] Failed to fetch video duration', err);
+                    previewLoading.classList.add('hidden');
+                    // Still try to show the iframe as a last resort
+                    videoPreview.src = previewUrl;
+                    videoPreview.classList.remove('hidden');
                 }
             } else {
                 previewContainer.classList.add('hidden');
                 videoPreview.src = '';
+                thumbnailFallback.src = '';
+                thumbnailFallback.classList.add('hidden');
+                restrictedBadge.classList.add('hidden');
+                videoPreview.classList.remove('hidden');
+                previewLoading.classList.add('hidden');
             }
         });
 
@@ -368,7 +437,8 @@
                 enableRange: enableRange.checked,
                 startTime: enableRange.checked ? parseInt(startTimeInput.value) : null,
                 endTime: enableRange.checked ? parseInt(endTimeInput.value) : null,
-                hookConfig: JSON.parse(localStorage.getItem('hookConfig') || '{}')
+                hookConfig: JSON.parse(localStorage.getItem('hookConfig') || '{}'),
+                cookies: JSON.parse(localStorage.getItem('hookConfig') || '{}').youtubeCookies || ''
             };
 
             try {

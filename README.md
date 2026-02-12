@@ -13,6 +13,7 @@ A containerized TypeScript application designed to automate the flow of download
 - **⚙️ Dynamic Hook Config**: Configure TikTok, Slack, and generic webhooks directly in the UI. Settings are persisted in **localStorage**.
 - **☁️ Automated Deployment**: Ready-to-use **GitHub Actions** for building and pushing images to GHCR. View deployments in the [Actions](https://github.com/joelwilsonmt/media-downloader-with-hooks/actions) tab or the [Packages](https://github.com/joelwilsonmt/media-downloader-with-hooks/pkgs/container/media-downloader-with-hooks) section.
 - **🛠 Self-Contained**: Automatically manages dependencies. No need to manually install `ffmpeg` or `yt-dlp`.
+- **🔞 Restricted Content**: Seamlessly download age-restricted or private YouTube videos by providing session cookies in the UI.
 
 ## 🌊 The Workflow
 
@@ -75,6 +76,24 @@ Instead of hardcoding credentials in `.env`, you can now use the **Settings Moda
 - **TikTok**: Client Key, Secret, and Access Token for auto-uploads.
 - **Slack**: Supports multiple webhook URLs for download notifications.
 - **Generic Webhooks**: Supports multiple callback URLs.
+
+### 🍪 Cookies Setup (For Age-Restricted Content)
+
+To download age-restricted videos, you must provide your YouTube session cookies:
+
+1.  **Install an Extension**: Use a browser extension like **"Get cookies.txt"** (available for Chrome and Firefox).
+2.  **Export Cookies**:
+    - Log in to your YouTube account in your browser.
+    - Open the extension while on any YouTube page.
+    - Click **Export** or **Download** to get the cookies in **Netscape HTTP Cookie File** format.
+3.  **Configure the App**:
+    - Click the **Gear Icon** in the App UI.
+    - Scroll down to the **YouTube Cookies** section.
+    - Paste the entire content of the `.txt` file you just downloaded.
+    - Click **Save Changes**.
+
+> [!IMPORTANT]
+> Your cookies are stored locally in your browser's `localStorage`. They are sent to the server to facilitate the download but are never stored permanently on the server; they are written to a temporary file and deleted immediately after the download process completes.
 
 ## 📁 Output Structure
 

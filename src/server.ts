@@ -2,6 +2,7 @@ import fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import path from 'path';
 import fs from 'fs';
 import { spawn, execSync } from 'child_process';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { HookManager } from './hooks/HookManager';
 import { HookConfig } from './hooks/Hook';
@@ -60,7 +61,6 @@ server.get('/', async (_request: FastifyRequest, reply: FastifyReply) => {
     reply.status(404).send('Index file not found');
   }
 });
-
 interface ProcessRequest {
   url: string;
   audioOnly?: boolean;
@@ -68,15 +68,17 @@ interface ProcessRequest {
   startTime?: number; // in seconds
   endTime?: number;   // in seconds
   hookConfig?: HookConfig;
+  cookies?: string;
 }
 
 interface InfoRequest {
   url: string;
+  cookies?: string;
 }
 
 // Info Route
-server.get<{ Querystring: InfoRequest }>('/api/info', async (request, reply) => {
-  const { url } = request.query;
+server.post<{ Body: InfoRequest }>('/api/info', async (request, reply) => {
+  const { url, cookies } = request.body;
 
   if (!url) {
     return reply.status(400).send({ error: 'URL is required' });
@@ -88,9 +90,19 @@ server.get<{ Querystring: InfoRequest }>('/api/info', async (request, reply) => 
     const args = [
       '--no-playlist',
       '--print', 'duration',
+      '--print', 'thumbnail',
       '--js-runtimes', 'bun',
-      url
     ];
+
+    let cookieFile = '';
+    if (cookies && cookies.trim()) {
+        const id = crypto.randomBytes(8).toString('hex');
+        cookieFile = path.join(BASE_DOWNLOAD_DIR, `cookies_${id}.txt`);
+        fs.writeFileSync(cookieFile, cookies);
+        args.push('--cookies', cookieFile);
+    }
+
+    args.push(url);
 
     const ytDlp = spawn(YT_DLP_PATH, args);
 
@@ -106,26 +118,34 @@ server.get<{ Querystring: InfoRequest }>('/api/info', async (request, reply) => 
     });
 
     ytDlp.on('close', (code) => {
+      // Cleanup cookie file
+      if (cookieFile && fs.existsSync(cookieFile)) {
+          fs.unlinkSync(cookieFile);
+      }
+
       if (code !== 0) {
         console.error(`[Info] yt-dlp failed with code ${code}: ${stderr}`);
         return resolve(reply.status(500).send({ error: 'Failed to fetch video info', details: stderr }));
       }
 
-      const duration = parseInt(stdout.trim());
+      const lines = stdout.trim().split('\n');
+      const duration = parseInt(lines[0]);
+      const thumbnail = lines[1] || '';
+
       if (isNaN(duration)) {
         console.error(`[Info] Failed to parse duration from stdout: "${stdout}"`);
         return resolve(reply.status(500).send({ error: 'Failed to parse video duration' }));
       }
 
-      console.log(`[Info] Duration detected: ${duration}s`);
-      return resolve(reply.send({ duration }));
+      console.log(`[Info] Info detected - Duration: ${duration}s, Thumbnail: ${!!thumbnail}`);
+      return resolve(reply.send({ duration, thumbnail }));
     });
   });
 });
 
 // Process Route
 server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => {
-  const { url, audioOnly, enableRange, startTime, endTime, hookConfig } = request.body;
+  const { url, audioOnly, enableRange, startTime, endTime, hookConfig, cookies } = request.body;
 
   if (!url) {
     return reply.status(400).send({ error: 'URL is required' });
@@ -158,6 +178,14 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
       '--js-runtimes', 'bun',
       '-o', outputTemplate,
     ];
+
+    let cookieFile = '';
+    if (cookies && cookies.trim()) {
+        const id = crypto.randomBytes(8).toString('hex');
+        cookieFile = path.join(BASE_DOWNLOAD_DIR, `cookies_${id}.txt`);
+        fs.writeFileSync(cookieFile, cookies);
+        args.push('--cookies', cookieFile);
+    }
 
     if (effectiveAudioOnly) {
         if (isSoundCloud) {
@@ -245,6 +273,11 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
     });
 
     ytDlp.on('close', async (code: number | null) => {
+      // Cleanup cookie file
+      if (cookieFile && fs.existsSync(cookieFile)) {
+          fs.unlinkSync(cookieFile);
+      }
+
       // Process any remaining buffer
       if (stdoutBuffer.trim()) {
           processLine(stdoutBuffer);
