@@ -57,8 +57,9 @@ async function setup() {
     try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const ffprobeStatic = require('ffprobe-static');
-        if (ffprobeStatic && ffprobeStatic.path && fs.existsSync(ffprobeStatic.path)) {
-             console.log(`[Setup] ffprobe-static found at: ${ffprobeStatic.path}`);
+        const ffprobePath = (ffprobeStatic && typeof ffprobeStatic === 'object' && 'path' in ffprobeStatic) ? ffprobeStatic.path : null;
+        if (ffprobePath && fs.existsSync(ffprobePath)) {
+             console.log(`[Setup] ffprobe-static found at: ${ffprobePath}`);
         } else {
              console.warn('[Setup] ffprobe-static not resolving correctly.');
         }

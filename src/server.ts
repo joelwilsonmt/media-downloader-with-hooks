@@ -7,7 +7,15 @@ import dotenv from 'dotenv';
 import { HookManager } from './hooks/HookManager';
 import { HookConfig } from './hooks/Hook';
 import ffmpegStatic from 'ffmpeg-static';
-import * as ffprobeStatic from 'ffprobe-static';
+
+// Robustly resolve ffprobe-static
+let ffprobeStatic: any;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  ffprobeStatic = require('ffprobe-static');
+} catch (e) {
+  // Fallback if require fails in some environments
+}
 
 dotenv.config();
 
@@ -45,7 +53,23 @@ const PROJECT_ROOT = process.cwd();
 const localYtDlp = path.join(PROJECT_ROOT, 'bin', 'yt-dlp');
 const YT_DLP_PATH = fs.existsSync(localYtDlp) ? localYtDlp : 'yt-dlp';
 const FFMPEG_PATH = ffmpegStatic || 'ffmpeg';
-const FFPROBE_PATH = ffprobeStatic.path || 'ffprobe';
+const FFPROBE_PATH = ffprobeStatic?.path || 'ffprobe';
+
+// Helper to extend PATH for yt-dlp to find ffmpeg/ffprobe
+const getExtendedEnv = () => {
+  const env = { ...process.env };
+  const ffmpegDir = path.dirname(FFMPEG_PATH);
+  const ffprobeDir = path.dirname(FFPROBE_PATH);
+  
+  const additionalPaths = [];
+  if (ffmpegDir !== '.') additionalPaths.push(ffmpegDir);
+  if (ffprobeDir !== '.') additionalPaths.push(ffprobeDir);
+  
+  if (additionalPaths.length > 0) {
+    env.PATH = `${additionalPaths.join(path.delimiter)}${path.delimiter}${process.env.PATH || ''}`;
+  }
+  return env;
+};
 
 // ... Server Routes ...
 
@@ -87,12 +111,10 @@ server.post<{ Body: InfoRequest }>('/api/info', async (request, reply) => {
 
   return new Promise((resolve) => {
     console.log(`[Info] Request for duration: ${url}`);
-    
     const args = [
       '--no-playlist',
-      '--print', 'duration',
-      '--print', 'thumbnail',
-      '--js-runtimes', 'bun',
+      '--dump-json',
+      '--js-runtimes', 'node',
     ];
 
     let cookieFile = '';
@@ -105,7 +127,7 @@ server.post<{ Body: InfoRequest }>('/api/info', async (request, reply) => {
 
     args.push(url);
 
-    const ytDlp = spawn(YT_DLP_PATH, args);
+    const ytDlp = spawn(YT_DLP_PATH, args, { env: getExtendedEnv() });
 
     let stdout = '';
     let stderr = '';
@@ -126,20 +148,28 @@ server.post<{ Body: InfoRequest }>('/api/info', async (request, reply) => {
 
       if (code !== 0) {
         console.error(`[Info] yt-dlp failed with code ${code}: ${stderr}`);
-        return resolve(reply.status(500).send({ error: 'Failed to fetch video info', details: stderr }));
+        let userError = 'Failed to fetch video info';
+        const lowerStderr = stderr.toLowerCase();
+        if (lowerStderr.includes('cookies are no longer valid') || lowerStderr.includes('rotated in the browser')) {
+          userError = 'YouTube cookies are invalid or rotated. Please use the "Clean Export Guide" in Settings.';
+        } else if (lowerStderr.includes('sign in to confirm your age')) {
+          userError = 'This video is age-restricted. Please provide valid cookies in Settings.';
+        }
+        return resolve(reply.status(500).send({ error: userError, details: stderr }));
       }
 
-      const lines = stdout.trim().split('\n');
-      const duration = parseInt(lines[0]);
-      const thumbnail = lines[1] || '';
+      try {
+        const data = JSON.parse(stdout);
+        const duration = Math.floor(data.duration || 0);
+        const thumbnail = data.thumbnail || '';
+        const ageLimit = data.age_limit || 0;
 
-      if (isNaN(duration)) {
-        console.error(`[Info] Failed to parse duration from stdout: "${stdout}"`);
-        return resolve(reply.status(500).send({ error: 'Failed to parse video duration' }));
+        console.log(`[Info] Info detected - Duration: ${duration}s, Thumbnail: ${!!thumbnail}, AgeLimit: ${ageLimit}`);
+        return resolve(reply.send({ duration, thumbnail, ageLimit }));
+      } catch (err) {
+        console.error(`[Info] Failed to parse JSON from stdout: "${stdout}"`, err);
+        return resolve(reply.status(500).send({ error: 'Failed to parse video info' }));
       }
-
-      console.log(`[Info] Info detected - Duration: ${duration}s, Thumbnail: ${!!thumbnail}`);
-      return resolve(reply.send({ duration, thumbnail }));
     });
   });
 });
@@ -188,9 +218,18 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
         }
     }
 
-    // Use %(title)s allows human-readable filenames.
+    // Base template for filenames.
     // When extracting audio, yt-dlp might change extension to .mp3 even if template says .mp4 or .%(ext)s
-    const outputTemplate = path.join(targetDir, '%(title)s.%(ext)s');
+    let filenameTemplate = '%(title)s.%(ext)s';
+
+    function formatTimeFriendly(seconds: number): string {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      if (h > 0) return `${h}h${m}m${s}s`;
+      if (m > 0) return `${m}m${s}s`;
+      return `${s}s`;
+    }
 
     function formatTimeHHMMSS(seconds: number): string {
       const h = Math.floor(seconds / 3600);
@@ -198,6 +237,10 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
       const s = seconds % 60;
       return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     }
+    if (enableRange && startTime != null && endTime != null) {
+        filenameTemplate = `%(title)s (${formatTimeFriendly(startTime)}-${formatTimeFriendly(endTime)}).%(ext)s`;
+    }
+    const outputTemplate = path.join(targetDir, filenameTemplate);
 
     return new Promise((resolve, _reject) => {
       // Spawn yt-dlp process
@@ -208,7 +251,7 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
       '--no-playlist',
       '--print', 'after_move:filepath',
       '--no-simulate',
-      '--js-runtimes', 'bun',
+      '--js-runtimes', 'node',
       '-o', outputTemplate,
     ];
 
@@ -234,7 +277,7 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
         args.push('--merge-output-format', 'mp4');
     }
 
-    if (enableRange && startTime !== undefined && endTime !== undefined) {
+    if (enableRange && startTime != null && endTime != null) {
         // yt-dlp --download-sections "*00:00:10-00:00:20"
         const rangeStr = `*${formatTimeHHMMSS(startTime)}-${formatTimeHHMMSS(endTime)}`;
         args.push('--download-sections', rangeStr);
@@ -244,13 +287,7 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
 
     args.push(url);
 
-    // Extend PATH to include ffmpeg and ffprobe directories
-    const env = { 
-        ...process.env, 
-        PATH: `${path.dirname(FFMPEG_PATH)}${path.delimiter}${path.dirname(FFPROBE_PATH)}${path.delimiter}${process.env.PATH}` 
-    };
-
-    const ytDlp = spawn(YT_DLP_PATH, args, { env });
+    const ytDlp = spawn(YT_DLP_PATH, args, { env: getExtendedEnv() });
 
     let finalFilePath = ''; // Will be captured from stdout
     const logs: string[] = [];
@@ -313,12 +350,24 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
 
       // Process any remaining buffer
       if (stdoutBuffer.trim()) {
-          processLine(stdoutBuffer);
+          const remainingLines = stdoutBuffer.split('\n');
+          for (const line of remainingLines) {
+              processLine(line);
+          }
       }
 
       if (code !== 0) {
+        let userError = 'Download failed';
+        const combinedLogs = (errorLogs.join('\n') + logs.join('\n')).toLowerCase();
+        
+        if (combinedLogs.includes('cookies are no longer valid') || combinedLogs.includes('rotated in the browser')) {
+          userError = 'YouTube cookies are invalid or rotated. Please use the "Clean Export Guide" in Settings.';
+        } else if (combinedLogs.includes('sign in to confirm your age')) {
+          userError = 'This video is age-restricted. Please provide valid cookies in Settings.';
+        }
+
         return resolve(reply.status(500).send({ 
-          error: 'Download failed',
+          error: userError,
           details: errorLogs.join('\n') || logs.join('\n')
         }));
       }

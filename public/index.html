@@ -18,7 +18,7 @@
         }
     </script>
 </head>
-<body class="bg-gray-900 text-white h-screen flex items-center justify-center font-sans antialiased">
+<body class="bg-gray-900 text-white min-h-screen py-10 flex items-center justify-center font-sans antialiased">
 
     <div class="w-full max-w-md p-8 bg-gray-800 rounded-xl shadow-2xl border border-gray-700">
         <div class="flex justify-between items-start mb-2">
@@ -184,8 +184,22 @@
 
                 <div class="space-y-3">
                     <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">YouTube Cookies</h3>
-                    <p class="text-[10px] text-gray-500 italic">Paste Netscape/txt format cookies for age-restricted content</p>
-                    <textarea id="ytCookies" placeholder="Paste cookies here..." class="w-full h-24 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-secondary font-mono"></textarea>
+                    <p class="text-[10px] text-gray-500 italic">Netscape format for age-restricted content. Only YouTube/Google domains are needed.</p>
+                    <div class="relative">
+                        <textarea id="ytCookies" placeholder="Paste cookies here..." class="w-full h-32 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-secondary font-mono"></textarea>
+                        <button type="button" id="sanitizeCookies" class="absolute bottom-2 right-2 px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-[10px] font-bold transition-colors">Sanitize</button>
+                    </div>
+                    <div id="cookieStats" class="text-[10px] text-gray-400 hidden"></div>
+                    <div class="p-2 bg-blue-900/20 border border-blue-900/30 rounded text-[10px] text-blue-300 space-y-1">
+                        <p class="font-bold uppercase tracking-tighter opacity-70">Clean Export Guide:</p>
+                        <ol class="list-decimal list-inside space-y-0.5 opacity-80">
+                            <li>Open a <b>Private/Incognito</b> window</li>
+                            <li>Log into YouTube <b>ONLY</b></li>
+                            <li>Export cookies using <b>"Get cookies.txt LOCALLY"</b></li>
+                            <li>Close the browser window <b>IMMEDIATELY</b></li>
+                            <li>Paste & Sanitize here</li>
+                        </ol>
+                    </div>
                 </div>
 
                 <div class="flex space-x-3 pt-4">
@@ -226,6 +240,8 @@
         const settingsModal = document.getElementById('settingsModal');
         const closeSettings = document.getElementById('closeSettings');
         const settingsForm = document.getElementById('settingsForm');
+        const sanitizeBtn = document.getElementById('sanitizeCookies');
+        const cookieStats = document.getElementById('cookieStats');
 
         // Modal Open/Close
         settingsBtn.onclick = () => settingsModal.classList.remove('hidden');
@@ -273,9 +289,56 @@
             }
 
             // Load Cookies
-            document.getElementById('ytCookies').value = config.youtubeCookies || '';
+            const cookies = config.youtubeCookies || '';
+            document.getElementById('ytCookies').value = cookies;
+            updateCookieStats(cookies);
         }
         loadSettings();
+
+        function updateCookieStats(cookies) {
+            if (!cookies.trim()) {
+                cookieStats.classList.add('hidden');
+                return;
+            }
+            const lines = cookies.split('\n').filter(line => line.trim() && !line.startsWith('#'));
+            const ytCount = lines.filter(l => l.includes('youtube.com') || l.includes('google.com')).length;
+            cookieStats.textContent = `Detected ${ytCount} YouTube/Google cookies out of ${lines.length} total entries.`;
+            cookieStats.classList.remove('hidden');
+        }
+
+        sanitizeBtn.onclick = () => {
+            const raw = document.getElementById('ytCookies').value;
+            if (!raw.trim()) return;
+
+            const lines = raw.split('\n');
+            const sanitized = lines.filter(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return false;
+                if (trimmed.startsWith('#')) return true; // Keep comments
+                
+                const lower = trimmed.toLowerCase();
+                // Whitelist only essential domains
+                const isYoutube = lower.includes('youtube.com');
+                const isGoogleRoot = lower.includes('\t.google.com\t') || lower.includes('\tgoogle.com\t');
+                const isGoogleAuth = lower.includes('accounts.google.com');
+                
+                // Specifically exclude noisy subdomains
+                const isNoisy = lower.includes('mail.google.com') || 
+                               lower.includes('drive.google.com') || 
+                               lower.includes('photos.google.com') ||
+                               lower.includes('docs.google.com') ||
+                               lower.includes('play.google.com');
+
+                return (isYoutube || isGoogleRoot || isGoogleAuth) && !isNoisy;
+            }).join('\n');
+
+            document.getElementById('ytCookies').value = sanitized;
+            updateCookieStats(sanitized);
+        };
+
+        document.getElementById('ytCookies').addEventListener('input', (e) => {
+            updateCookieStats(e.target.value);
+        });
 
         settingsForm.onsubmit = (e) => {
             e.preventDefault();
@@ -309,6 +372,20 @@
 
         // Helper: Extract YouTube Video ID
         function getYouTubeID(url) {
+            if (!url) return null;
+            try {
+                const urlObj = new URL(url);
+                if (urlObj.hostname.includes('youtube.com')) {
+                    return urlObj.searchParams.get('v');
+                }
+                if (urlObj.hostname === 'youtu.be') {
+                    return urlObj.pathname.slice(1).split(/[?#]/)[0];
+                }
+                if (urlObj.pathname.includes('/embed/')) {
+                    const parts = urlObj.pathname.split('/embed/');
+                    if (parts[1]) return parts[1].split(/[?#]/)[0];
+                }
+            } catch (e) {}
             const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
             const match = url.match(regExp);
             return (match && match[2].length === 11) ? match[2] : null;
@@ -334,15 +411,21 @@
 
             let previewUrl = '';
             if (ytId) {
-                previewUrl = `https://www.youtube.com/embed/${ytId}?autoplay=0`;
+                previewUrl = `https://www.youtube-nocookie.com/embed/${ytId}?autoplay=0`;
             } else if (ttId) {
                 previewUrl = `https://www.tiktok.com/embed/v2/${ttId}`;
             } else if (isSc) {
                 previewUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(urlInput.value)}&color=%23ff5500&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`;
                 // SoundCloud is audio only, auto-select the checkbox
                 audioOnly.checked = true;
-                // Since SC doesn't usually have a meaningful duration for cutting as easily as video in this UI,
-                // we'll still try to fetch duration but SC is best downloaded whole.
+            }
+            
+            // Proactively show sub-folder section if it looks like a supported media URL
+            if (ytId || ttId || isSc) {
+                console.log(`[Frontend] Supported URL detected, showing sub-folder section proactively.`);
+                subFolderSection.classList.remove('max-h-0', 'opacity-0', 'invisible');
+                subFolderSection.classList.add('max-h-40', 'opacity-100', 'mb-6');
+                refreshSubFolderSuggestions();
             }
 
             if (previewUrl) {
@@ -352,10 +435,6 @@
                 videoPreview.classList.add('hidden');
                 thumbnailFallback.classList.add('hidden');
                 restrictedBadge.classList.add('hidden');
-                
-                // Reset subfolder visibility on new URL
-                subFolderSection.classList.add('max-h-0', 'opacity-0', 'invisible');
-                subFolderSection.classList.remove('max-h-40', 'opacity-100', 'mb-6');
 
                 // Fetch video duration
                 try {
@@ -367,6 +446,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ url: urlInput.value, cookies })
                     });
+                    if (!response.ok) throw new Error(`Server returned ${response.status}`);
                     const data = await response.json();
                     
                     // Finalize preview choice
@@ -378,40 +458,44 @@
                         endTimeInput.max = duration;
                         endTimeInput.value = duration;
                         endTimeLabel.textContent = formatTime(duration);
-                        console.log(`[Frontend] Duration synced: ${duration}s`);
-                        
-                        // Show Sub-folder section with animation
-                        console.log(`[Frontend] Animating sub-folder section...`);
-                        subFolderSection.classList.remove('max-h-0', 'opacity-0', 'invisible');
-                        subFolderSection.classList.add('max-h-40', 'opacity-100', 'mb-6');
                         refreshSubFolderSuggestions();
                     }
                     
-                    // Handle thumbnail fallback for restricted videos
-                    if (data.thumbnail) {
-                        thumbnailFallback.src = data.thumbnail;
+                    if (data.ageLimit > 0) {
+                        const thumb = data.thumbnail || (ytId ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg` : '');
+                        thumbnailFallback.src = thumb;
+                        videoPreview.src = '';
+                        thumbnailFallback.classList.remove('hidden');
+                        restrictedBadge.textContent = 'Restricted Preview (Static)';
+                        restrictedBadge.classList.remove('hidden');
+                        videoPreview.classList.add('hidden');
                         
-                        // Heuristic: If we are using cookies and it's YouTube, the iframe might be restricted.
-                        // We show the thumbnail fallback instead of the broken iframe.
-                        if (ytId && cookies.trim()) {
-                            videoPreview.src = ''; // Ensure iframe doesn't load
-                            thumbnailFallback.classList.remove('hidden');
-                            restrictedBadge.classList.remove('hidden');
-                        } else {
-                            videoPreview.src = previewUrl; // Now it's safe to load
-                            videoPreview.classList.remove('hidden');
-                        }
+                        // Age restricted videos usually fail duration fetch too, 
+                        // but if we got here we might have duration.
                     } else if (previewUrl) {
-                        // Fallback if no thumbnail but we have preview URL (SoundCloud/TikTok/Normal YT)
                         videoPreview.src = previewUrl;
                         videoPreview.classList.remove('hidden');
+                        thumbnailFallback.classList.add('hidden');
+                        restrictedBadge.classList.add('hidden');
                     }
                 } catch (err) {
                     console.error('[Frontend] Failed to fetch video duration', err);
                     previewLoading.classList.add('hidden');
-                    // Still try to show the iframe as a last resort
-                    videoPreview.src = previewUrl;
-                    videoPreview.classList.remove('hidden');
+                    
+                    // If it's YouTube and fetch failed, it might be due to a challenge or blocking.
+                    // We show the thumbnail fallback but use a neutral badge unless we're sure it's restricted.
+                    if (ytId) {
+                        thumbnailFallback.src = `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`;
+                        videoPreview.src = '';
+                        thumbnailFallback.classList.remove('hidden');
+                        restrictedBadge.textContent = 'Preview Unavailable (Static)';
+                        restrictedBadge.classList.remove('hidden');
+                        videoPreview.classList.add('hidden');
+                    } else {
+                        // Still try to show the iframe as a last resort (SoundCloud/TikTok)
+                        videoPreview.src = previewUrl;
+                        videoPreview.classList.remove('hidden');
+                    }
                 }
             } else {
                 previewContainer.classList.add('hidden');
@@ -544,7 +628,7 @@
                 `;
             } else {
                 subFolderList.innerHTML = filtered.map(f => `
-                    <div class="folder-option px-3 py-2.1 hover:bg-secondary/20 hover:text-secondary rounded cursor-pointer text-sm transition-colors border-b border-gray-700 last:border-0" data-name="${f}">
+                    <div class="folder-option px-3 py-2 hover:bg-secondary/20 hover:text-secondary rounded cursor-pointer text-sm transition-colors border-b border-gray-700 last:border-0" data-name="${f}">
                         ${f}
                     </div>
                 `).join('');
