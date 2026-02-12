@@ -145,6 +145,11 @@
     <!-- Settings Modal -->
     <div id="settingsModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden p-4">
         <div class="bg-gray-800 w-full max-w-md p-6 rounded-xl border border-gray-700 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <button type="button" id="closeSettingsIcon" class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
             <h2 class="text-xl font-bold mb-4 flex items-center space-x-2">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -242,10 +247,12 @@
         const settingsForm = document.getElementById('settingsForm');
         const sanitizeBtn = document.getElementById('sanitizeCookies');
         const cookieStats = document.getElementById('cookieStats');
+        const closeSettingsIcon = document.getElementById('closeSettingsIcon');
 
         // Modal Open/Close
         settingsBtn.onclick = () => settingsModal.classList.remove('hidden');
         closeSettings.onclick = () => settingsModal.classList.add('hidden');
+        closeSettingsIcon.onclick = () => settingsModal.classList.add('hidden');
         settingsModal.onclick = (e) => { if(e.target === settingsModal) settingsModal.classList.add('hidden'); };
 
         // Load Settings
@@ -579,7 +586,16 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    result.innerHTML = `<span class="text-green-400 font-bold">Success!</span><br>${data.message}`;
+                    result.innerHTML = `
+                        <div class="space-y-4">
+                            <div>
+                                <span class="text-green-400 font-bold text-lg">Success!</span>
+                                <div class="text-gray-300 mt-1">${data.message}</div>
+                            </div>
+                            <button type="button" onclick="resetPage()" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded text-xs font-bold transition-colors">
+                                Download Another
+                            </button>
+                        </div>`;
                 } else {
                     statusArea.className = 'mt-6 p-4 rounded-lg bg-red-900/20 text-sm border border-red-800 text-left';
                     const errorDetails = data.details ? `<pre class="mt-2 p-2 bg-black/30 rounded text-xs text-red-300 overflow-x-auto whitespace-pre-wrap">${data.details}</pre>` : '';
@@ -596,6 +612,25 @@
                 refreshSubFolderSuggestions();
             }
         });
+
+        // Reset Page functionality
+        window.resetPage = () => {
+            form.reset();
+            urlInput.value = '';
+            subFolderInput.value = '';
+            statusArea.classList.add('hidden');
+            result.classList.add('hidden');
+            result.innerHTML = '';
+            previewContainer.classList.add('hidden');
+            videoPreview.src = '';
+            thumbnailFallback.src = '';
+            thumbnailFallback.classList.add('hidden');
+            restrictedBadge.classList.add('hidden');
+            subFolderSection.classList.add('max-h-0', 'opacity-0', 'invisible');
+            subFolderSection.classList.remove('max-h-40', 'opacity-100', 'mb-6');
+            rangeContainer.classList.add('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
 
         // Sub-folder handling
         let existingFolders = [];
