@@ -38,13 +38,19 @@
         <form id="processForm" class="space-y-6">
             <div>
                 <label for="url" class="block text-sm font-medium text-gray-300 mb-2">Video or Audio URL (YouTube, TikTok, SoundCloud)</label>
-                <input 
-                    type="url" 
-                    id="url" 
-                    required 
+                <input
+                    type="url"
+                    id="url"
+                    required
                     class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder-gray-500"
-                    placeholder="YouTube, TikTok, or SoundCloud URL..."
+                    placeholder="YouTube, TikTok, SoundCloud, or playlist URL..."
                 >
+                <div id="playlistBadge" class="hidden mt-2 flex items-center space-x-2 text-xs text-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10M4 18h10" />
+                    </svg>
+                    <span id="playlistBadgeText">Playlist detected — all items will be downloaded</span>
+                </div>
             </div>
 
             <div id="subFolderSection" class="max-h-0 overflow-visible transition-all duration-500 opacity-0 mb-0 invisible">
@@ -407,28 +413,88 @@
 
         // Helper: Extract SoundCloud URL (just check if it is SC)
         function isSoundCloud(url) {
-            return url.toLowerCase().includes('soundcloud.com');
+            return url.toLowerCase().includes('soundcloud.com') || url.toLowerCase().startsWith('scsearch');
         }
+
+        // Helper: Extract Spotify Playlist URL
+        function isSpotifyPlaylist(url) {
+            return url && url.toLowerCase().includes('spotify.com/playlist/');
+        }
+
+        // Helper: Detect YouTube playlist (pure playlist page, not individual watch+list)
+        function isYouTubePlaylist(url) {
+            if (!url) return false;
+            try {
+                const u = new URL(url);
+                if (u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be')) {
+                    const list = u.searchParams.get('list');
+                    const v = u.searchParams.get('v');
+                    return !!(list && !v); // playlist page only, not single video-in-playlist
+                }
+            } catch (e) {}
+            return false;
+        }
+
+        // Helper: Detect SoundCloud set/playlist
+        function isSoundCloudPlaylist(url) {
+            if (!url) return false;
+            try {
+                const u = new URL(url);
+                return u.hostname.includes('soundcloud.com') && u.pathname.includes('/sets/');
+            } catch (e) {}
+            return false;
+        }
+
+        function isNativePlaylist(url) {
+            return isYouTubePlaylist(url) || isSoundCloudPlaylist(url);
+        }
+
+        const playlistBadge = document.getElementById('playlistBadge');
+        const playlistBadgeText = document.getElementById('playlistBadgeText');
 
         // Handle URL changes
         urlInput.addEventListener('input', async () => {
             const ytId = getYouTubeID(urlInput.value);
             const ttId = getTikTokID(urlInput.value);
             const isSc = isSoundCloud(urlInput.value);
+            const isSpotify = isSpotifyPlaylist(urlInput.value);
+            const isYtPlaylist = isYouTubePlaylist(urlInput.value);
+            const isScPlaylist = isSoundCloudPlaylist(urlInput.value);
+            const isNativePl = isYtPlaylist || isScPlaylist;
+
+            // Show/hide playlist badge
+            if (isNativePl) {
+                playlistBadgeText.textContent = isYtPlaylist
+                    ? 'YouTube playlist detected — all videos will be downloaded'
+                    : 'SoundCloud set detected — all tracks will be downloaded as WAV';
+                playlistBadge.classList.remove('hidden');
+                // Hide range controls for playlists
+                enableRange.checked = false;
+                rangeContainer.classList.add('hidden');
+                enableRange.disabled = true;
+            } else {
+                playlistBadge.classList.add('hidden');
+                enableRange.disabled = false;
+            }
 
             let previewUrl = '';
             if (ytId) {
                 previewUrl = `https://www.youtube-nocookie.com/embed/${ytId}?autoplay=0`;
             } else if (ttId) {
                 previewUrl = `https://www.tiktok.com/embed/v2/${ttId}`;
-            } else if (isSc) {
+            } else if (isSc && !isScPlaylist) {
                 previewUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(urlInput.value)}&color=%23ff5500&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`;
                 // SoundCloud is audio only, auto-select the checkbox
                 audioOnly.checked = true;
+            } else if (isScPlaylist) {
+                audioOnly.checked = true;
+            } else if (isSpotify) {
+                // Audio only for Spotify playlist scrape
+                audioOnly.checked = true;
             }
-            
+
             // Proactively show sub-folder section if it looks like a supported media URL
-            if (ytId || ttId || isSc) {
+            if (ytId || ttId || isSc || isSpotify || isNativePl) {
                 console.log(`[Frontend] Supported URL detected, showing sub-folder section proactively.`);
                 subFolderSection.classList.remove('max-h-0', 'opacity-0', 'invisible');
                 subFolderSection.classList.add('max-h-40', 'opacity-100', 'mb-6');
@@ -563,6 +629,174 @@
             result.classList.add('hidden');
             statusArea.className = 'mt-6 p-4 rounded-lg bg-gray-700/50 text-sm border border-gray-600'; // Reset styles
 
+            if (isNativePlaylist(url)) {
+                try {
+                    result.innerHTML = `
+                        <div class="space-y-4">
+                            <div>
+                                <span class="text-secondary font-bold text-lg animate-pulse" id="plProgressTitle">Fetching Playlist...</span>
+                                <div class="text-gray-300 mt-2 font-mono text-xs" id="plProgressDetails">This might take a moment...</div>
+                                <div class="w-full bg-gray-700 rounded-full h-2 mt-4 hidden" id="plProgressBarContainer">
+                                    <div class="bg-primary h-2 rounded-full transition-all duration-300" id="plProgressBar" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>`;
+                    loading.classList.add('hidden');
+                    result.classList.remove('hidden');
+
+                    const config = JSON.parse(localStorage.getItem('hookConfig') || '{}');
+                    const cookies = config.youtubeCookies || '';
+                    const isScPl = isSoundCloudPlaylist(url);
+                    const wantAudio = audioOnly.checked || isScPl;
+
+                    const infoRes = await fetch('/api/playlist-info', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url, cookies })
+                    });
+                    const infoData = await infoRes.json();
+
+                    if (!infoRes.ok || !infoData.success) {
+                        throw new Error(infoData.error || 'Failed to fetch playlist items');
+                    }
+
+                    const entries = infoData.entries;
+                    const total = entries.length;
+                    let successCount = 0;
+                    const playlistTitle = infoData.title || 'Playlist';
+                    const finalFolder = subFolderInput.value.trim() || playlistTitle.replace(/[/\\:*?"<>|]/g, '-').trim();
+
+                    document.getElementById('plProgressTitle').textContent = `Downloading playlist: ${playlistTitle}`;
+                    document.getElementById('plProgressBarContainer').classList.remove('hidden');
+
+                    for (let i = 0; i < total; i++) {
+                        const entry = entries[i];
+                        document.getElementById('plProgressTitle').textContent = `Downloading ${i + 1} of ${total}`;
+                        document.getElementById('plProgressDetails').textContent = entry.title;
+                        document.getElementById('plProgressBar').style.width = `${(i / total) * 100}%`;
+
+                        const payload = {
+                            url: entry.url,
+                            audioOnly: wantAudio,
+                            subFolder: finalFolder,
+                            enableRange: false,
+                            hookConfig: config,
+                            cookies
+                        };
+
+                        const procRes = await fetch('/api/process', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const procData = await procRes.json();
+                        if (procRes.ok && procData.success) {
+                            successCount++;
+                        } else {
+                            console.error(`Failed to download "${entry.title}":`, procData.error || procData);
+                        }
+                    }
+
+                    document.getElementById('plProgressBar').style.width = '100%';
+                    document.getElementById('plProgressTitle').textContent = 'Playlist Download Complete!';
+                    document.getElementById('plProgressTitle').className = 'text-green-400 font-bold text-lg';
+                    document.getElementById('plProgressDetails').innerHTML = `Downloaded ${successCount} of ${total} items to folder: <strong>${finalFolder}</strong><br>
+                        <button type="button" onclick="resetPage()" class="mt-4 px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded text-xs font-bold transition-colors">
+                            Download Another
+                        </button>`;
+                } catch (err) {
+                    statusArea.className = 'mt-6 p-4 rounded-lg bg-red-900/20 text-sm border border-red-800 text-left';
+                    result.innerHTML = `<span class="text-red-400 font-bold">Error</span><br>${err.message}`;
+                } finally {
+                    submitBtn.disabled = false;
+                    refreshSubFolderSuggestions();
+                }
+                return;
+            }
+
+            if (isSpotifyPlaylist(url)) {
+                try {
+                    result.innerHTML = `
+                        <div class="space-y-4">
+                            <div>
+                                <span class="text-secondary font-bold text-lg animate-pulse" id="spotifyProgressTitle">Fetching Playlist...</span>
+                                <div class="text-gray-300 mt-2 font-mono text-xs" id="spotifyProgressDetails">This might take a moment...</div>
+                                <div class="w-full bg-gray-700 rounded-full h-2 mt-4 hidden" id="spotifyProgressBarContainer">
+                                    <div class="bg-primary h-2 rounded-full transition-all duration-300" id="spotifyProgressBar" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>`;
+                    loading.classList.add('hidden');
+                    result.classList.remove('hidden');
+
+                    const trackRes = await fetch('/api/spotify-tracks', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url })
+                    });
+                    const trackData = await trackRes.json();
+                    
+                    if (!trackRes.ok || !trackData.success) {
+                        throw new Error(trackData.error || 'Failed to fetch playlist tracks');
+                    }
+
+                    const tracks = trackData.tracks;
+                    const total = tracks.length;
+                    let successCount = 0;
+
+                    document.getElementById('spotifyProgressBarContainer').classList.remove('hidden');
+                    
+                    // Default folder for Spotify playlist if not defined
+                    const finalFolder = subFolderInput.value.trim() || 'SpotifyPlaylist';
+
+                    for (let i = 0; i < total; i++) {
+                        const track = tracks[i];
+                        document.getElementById('spotifyProgressTitle').textContent = `Downloading ${i + 1} of ${total}`;
+                        document.getElementById('spotifyProgressDetails').textContent = `Track: ${track.title}`;
+                        document.getElementById('spotifyProgressBar').style.width = `${(i / total) * 100}%`;
+
+                        const payload = {
+                            url: track.query, // Pass the scsearch1: query
+                            customTitle: track.title, // Use custom title for "Title - Artist" format
+                            audioOnly: true,
+                            subFolder: finalFolder,
+                            enableRange: false,
+                            hookConfig: JSON.parse(localStorage.getItem('hookConfig') || '{}'),
+                            cookies: JSON.parse(localStorage.getItem('hookConfig') || '{}').youtubeCookies || ''
+                        };
+
+                        const procRes = await fetch('/api/process', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const procData = await procRes.json();
+                        if (procRes.ok && procData.success) {
+                            successCount++;
+                        } else {
+                            console.error(`Failed to download track ${track.title}:`, procData.error || procData);
+                        }
+                    }
+
+                    document.getElementById('spotifyProgressBar').style.width = `100%`;
+                    document.getElementById('spotifyProgressTitle').textContent = `Playlist Download Complete!`;
+                    document.getElementById('spotifyProgressTitle').className = `text-green-400 font-bold text-lg`;
+                    document.getElementById('spotifyProgressDetails').innerHTML = `Successfully downloaded ${successCount} of ${total} tracks to folder: <strong>${finalFolder}</strong><br>
+                        <button type="button" onclick="resetPage()" class="mt-4 px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded text-xs font-bold transition-colors">
+                            Download Another
+                        </button>`;
+                    
+                } catch (err) {
+                    statusArea.className = 'mt-6 p-4 rounded-lg bg-red-900/20 text-sm border border-red-800 text-left';
+                    result.innerHTML = `<span class="text-red-400 font-bold">Error</span><br>${err.message}`;
+                } finally {
+                    submitBtn.disabled = false;
+                    refreshSubFolderSuggestions();
+                }
+                return;
+            }
+
             const payload = {
                 url,
                 audioOnly: audioOnly.checked,
@@ -629,6 +863,8 @@
             subFolderSection.classList.add('max-h-0', 'opacity-0', 'invisible');
             subFolderSection.classList.remove('max-h-40', 'opacity-100', 'mb-6');
             rangeContainer.classList.add('hidden');
+            playlistBadge.classList.add('hidden');
+            enableRange.disabled = false;
             window.scrollTo({ top: 0, behavior: 'smooth' });
         };
 

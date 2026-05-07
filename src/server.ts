@@ -7,6 +7,11 @@ import dotenv from 'dotenv';
 import { HookManager } from './hooks/HookManager';
 import { HookConfig } from './hooks/Hook';
 import ffmpegStatic from 'ffmpeg-static';
+import fetch from 'isomorphic-unfetch';
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const spotifyUrlInfo = require('spotify-url-info');
+const spotify = spotifyUrlInfo(fetch);
 
 // Robustly resolve ffprobe-static
 let ffprobeStatic: any;
@@ -94,6 +99,7 @@ interface ProcessRequest {
   hookConfig?: HookConfig;
   cookies?: string;
   subFolder?: string;
+  customTitle?: string;
 }
 
 interface InfoRequest {
@@ -198,15 +204,122 @@ server.get<{ Querystring: { type: 'audio' | 'video' } }>('/api/sub-folders', asy
   }
 });
 
-// Process Route
-server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => {
-  const { url, audioOnly, enableRange, startTime, endTime, hookConfig, cookies, subFolder } = request.body;
+interface SpotifyTracksRequest {
+  url: string;
+}
+
+interface PlaylistInfoRequest {
+  url: string;
+  cookies?: string;
+}
+
+// Playlist Info Route (YouTube playlists, SoundCloud sets)
+server.post<{ Body: PlaylistInfoRequest }>('/api/playlist-info', async (request, reply) => {
+  const { url, cookies } = request.body;
 
   if (!url) {
     return reply.status(400).send({ error: 'URL is required' });
   }
 
-    const isSoundCloud = url.toLowerCase().includes('soundcloud.com');
+  return new Promise((resolve) => {
+    console.log(`[Playlist] Fetching playlist info for: ${url}`);
+    const args = [
+      '--flat-playlist',
+      '--dump-single-json',
+    ];
+
+    let cookieFile = '';
+    if (cookies && cookies.trim()) {
+      const id = crypto.randomBytes(8).toString('hex');
+      cookieFile = path.join(BASE_DOWNLOAD_DIR, `cookies_${id}.txt`);
+      fs.writeFileSync(cookieFile, cookies);
+      args.push('--cookies', cookieFile);
+    }
+
+    args.push(url);
+
+    const ytDlp = spawn(YT_DLP_PATH, args, { env: getExtendedEnv() });
+
+    let stdout = '';
+    let stderr = '';
+
+    ytDlp.stdout.on('data', (data) => { stdout += data.toString(); });
+    ytDlp.stderr.on('data', (data) => { stderr += data.toString(); });
+
+    ytDlp.on('close', (code) => {
+      if (cookieFile && fs.existsSync(cookieFile)) {
+        fs.unlinkSync(cookieFile);
+      }
+
+      if (code !== 0) {
+        console.error(`[Playlist] yt-dlp failed with code ${code}: ${stderr}`);
+        return resolve(reply.status(500).send({ error: 'Failed to fetch playlist info', details: stderr }));
+      }
+
+      try {
+        const data = JSON.parse(stdout);
+        const isSoundCloudSet = url.toLowerCase().includes('soundcloud.com') && url.toLowerCase().includes('/sets/');
+        const entries = (data.entries || []).map((e: any) => {
+          let entryUrl = e.url || e.webpage_url;
+          if (!entryUrl && e.id) {
+            entryUrl = isSoundCloudSet
+              ? `https://soundcloud.com/${e.uploader_id || ''}/${e.id}`
+              : `https://www.youtube.com/watch?v=${e.id}`;
+          }
+          return { id: e.id, title: e.title || e.id, url: entryUrl };
+        }).filter((e: any) => e.url);
+
+        console.log(`[Playlist] Found ${entries.length} items in "${data.title}"`);
+        return resolve(reply.send({ success: true, title: data.title || 'Playlist', entries }));
+      } catch (err) {
+        console.error(`[Playlist] Failed to parse JSON:`, err);
+        return resolve(reply.status(500).send({ error: 'Failed to parse playlist info' }));
+      }
+    });
+  });
+});
+
+// Spotify Info Route
+server.post<{ Body: SpotifyTracksRequest }>('/api/spotify-tracks', async (request, reply) => {
+  const { url } = request.body;
+
+  if (!url || !url.includes('spotify.com/playlist/')) {
+    return reply.status(400).send({ error: 'Valid Spotify Playlist URL is required' });
+  }
+
+  try {
+    console.log(`[Spotify] Fetching playlist data for: ${url}`);
+    const data = await spotify.getTracks(url);
+    if (!data || data.length === 0) {
+      return reply.status(404).send({ error: 'No tracks found in the playlist' });
+    }
+
+    const tracks = data.map((t: any) => {
+      const artistStr = t.artist || '';
+      const query = `scsearch1:${artistStr} - ${t.name}`;
+      return {
+        title: `${t.name} - ${artistStr}`,
+        query
+      };
+    });
+
+    console.log(`[Spotify] Found ${tracks.length} tracks.`);
+    return reply.send({ success: true, tracks });
+  } catch (err) {
+    console.error(`[Spotify] Failed to fetch tracks:`, err);
+    return reply.status(500).send({ error: 'Failed to fetch Spotify playlist metadata' });
+  }
+});
+
+// Process Route
+server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => {
+  const { url, audioOnly, enableRange, startTime, endTime, hookConfig, cookies, subFolder, customTitle } = request.body;
+
+  if (!url) {
+    return reply.status(400).send({ error: 'URL is required' });
+  }
+
+    const isSoundCloud = url.toLowerCase().includes('soundcloud.com') || url.toLowerCase().startsWith('scsearch');
     const effectiveAudioOnly = audioOnly || isSoundCloud;
     let targetDir = effectiveAudioOnly ? AUDIO_DIR : VIDEO_DIR;
 
@@ -221,6 +334,10 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
     // Base template for filenames.
     // When extracting audio, yt-dlp might change extension to .mp3 even if template says .mp4 or .%(ext)s
     let filenameTemplate = '%(title)s.%(ext)s';
+    if (customTitle && customTitle.trim()) {
+        const safeTitle = customTitle.trim().replace(/[/\\]/g, '-').replace(/[:*?"<>|]/g, '');
+        filenameTemplate = `${safeTitle}.%(ext)s`;
+    }
 
     function formatTimeFriendly(seconds: number): string {
       const h = Math.floor(seconds / 3600);
@@ -252,6 +369,8 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
       '--print', 'after_move:filepath',
       '--no-simulate',
       '--js-runtimes', 'node',
+      '--add-metadata',
+      '--embed-thumbnail',
       '-o', outputTemplate,
     ];
 
