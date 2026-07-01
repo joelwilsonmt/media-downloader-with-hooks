@@ -29,6 +29,10 @@ RUN bun install
 # Copy app source
 COPY . .
 
+# Install entrypoint that self-updates yt-dlp on every container start
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod a+rx /usr/local/bin/docker-entrypoint.sh
+
 # Create downloads directory
 RUN mkdir -p /app/downloads
 
@@ -39,5 +43,6 @@ EXPOSE 3000
 ENV IS_DOCKER=true
 ENV DOWNLOAD_DIR=/app/downloads
 
-# Start the application using Bun directly
+# Self-update yt-dlp on start, then launch the app
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["bun", "src/server.ts"]
