@@ -370,7 +370,9 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
       '--no-simulate',
       '--js-runtimes', 'node',
       '--add-metadata',
-      '--embed-thumbnail',
+      // NOTE: --embed-thumbnail is added per-format below, not here. WAV (the
+      // SoundCloud audio path) is not a supported container for thumbnail
+      // embedding and yt-dlp fails postprocessing if we try.
       '-o', outputTemplate,
     ];
 
@@ -384,16 +386,17 @@ server.post<{ Body: ProcessRequest }>('/api/process', async (request, reply) => 
 
     if (effectiveAudioOnly) {
         if (isSoundCloud) {
-            // Extract highest quality wav for SoundCloud
+            // Extract highest quality wav for SoundCloud.
+            // WAV can't hold an embedded thumbnail, so no --embed-thumbnail here.
             args.push('-x', '--audio-format', 'wav');
         } else {
             // Extract highest quality mp3 for others
-            args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
+            args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0', '--embed-thumbnail');
         }
     } else {
         // Video optimization
         args.push('-f', 'bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best');
-        args.push('--merge-output-format', 'mp4');
+        args.push('--merge-output-format', 'mp4', '--embed-thumbnail');
     }
 
     if (enableRange && startTime != null && endTime != null) {
