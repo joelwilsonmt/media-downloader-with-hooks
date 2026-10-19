@@ -2,6 +2,11 @@ name: Docker Build & Push
 on:
   push:
     branches: [ main ]
+  # Weekly rebuild so the baked-in yt-dlp stays fresh even without code changes
+  schedule:
+    - cron: '0 6 * * 1'
+  # Allow manual "Run workflow" triggers from the Actions tab
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest

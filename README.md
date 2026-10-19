@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
 ```
 
-Every push to `main` builds and pushes the image to GHCR (`.github/workflows/deploy.yml`). Each build installs the latest yt-dlp from PyPI, including the YouTube challenge solver and `curl_cffi` for sites that need browser impersonation. When a site starts failing, rebuild or pull the image.
+Every push to `main` builds and pushes the image to GHCR (`.github/workflows/deploy.yml`). Each build installs the latest yt-dlp from PyPI, including the YouTube challenge solver and `curl_cffi` for sites that need browser impersonation. The image also rebuilds weekly, and a running container updates yt-dlp on start and once a day, so extractor fixes arrive without a redeploy.
 
 ### Environment
 

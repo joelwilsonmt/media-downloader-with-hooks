@@ -27,9 +27,14 @@ COPY src ./src
 COPY shared ./shared
 COPY --from=web /app/dist/web ./dist/web
 
+# Updates yt-dlp on start and daily, then launches the app.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod a+rx /usr/local/bin/docker-entrypoint.sh
+
 ENV IS_DOCKER=true
 ENV DOWNLOAD_DIR=/app/downloads
 RUN mkdir -p /app/downloads
 
 EXPOSE 3000
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["bun", "src/server.ts"]
