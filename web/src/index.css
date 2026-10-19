@@ -1,0 +1,135 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/*
+ * A palette is a neutral ramp (hue + chroma) and one accent colour per mode.
+ * Green and red stay reserved for job outcomes; source colours appear as
+ * swatches only.
+ */
+/* Velvet (default) */
+:root {
+  --nh: 295;
+  --nc: 0.012;
+  --brand-light: oklch(0.52 0.2 292);
+  --brand-ink-light: oklch(0.99 0.006 290);
+  --brand-dark: oklch(0.75 0.15 295);
+  --brand-ink-dark: oklch(0.18 0.04 295);
+}
+
+/* Alternative: set data-palette="signal" on <html> in web/index.html. */
+[data-palette='signal'] {
+  --nh: 255;
+  --nc: 0.01;
+  --brand-light: oklch(0.53 0.19 262);
+  --brand-ink-light: oklch(0.99 0.005 260);
+  --brand-dark: oklch(0.74 0.14 255);
+  --brand-ink-dark: oklch(0.18 0.03 260);
+}
+
+:root {
+  --background: oklch(0.975 calc(var(--nc) * 0.5) var(--nh));
+  --foreground: oklch(0.22 calc(var(--nc) * 1.4) var(--nh));
+  --card: oklch(0.995 calc(var(--nc) * 0.25) var(--nh));
+  --muted: oklch(0.945 calc(var(--nc) * 0.7) var(--nh));
+  --muted-foreground: oklch(0.47 calc(var(--nc) * 1.6) var(--nh));
+  --border: oklch(0.885 var(--nc) var(--nh));
+  --input: oklch(0.86 calc(var(--nc) * 1.2) var(--nh));
+  --track: oklch(0.9 var(--nc) var(--nh));
+  --primary: var(--brand-light);
+  --primary-foreground: var(--brand-ink-light);
+  --accent: color-mix(in oklch, var(--brand-light) 12%, var(--card));
+  --ring: var(--brand-light);
+  --success: oklch(0.5 0.12 150);
+  --destructive: oklch(0.53 0.19 27);
+  --radius: 0.625rem;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.175 calc(var(--nc) * 0.7) var(--nh));
+    --foreground: oklch(0.94 calc(var(--nc) * 0.7) var(--nh));
+    --card: oklch(0.205 calc(var(--nc) * 0.8) var(--nh));
+    --muted: oklch(0.245 var(--nc) var(--nh));
+    --muted-foreground: oklch(0.71 calc(var(--nc) * 1.3) var(--nh));
+    --border: oklch(0.29 var(--nc) var(--nh));
+    --input: oklch(0.34 calc(var(--nc) * 1.2) var(--nh));
+    --track: oklch(0.3 var(--nc) var(--nh));
+    --primary: var(--brand-dark);
+    --primary-foreground: var(--brand-ink-dark);
+    --accent: color-mix(in oklch, var(--brand-dark) 16%, var(--card));
+    --ring: var(--brand-dark);
+    --success: oklch(0.76 0.14 150);
+    --destructive: oklch(0.7 0.17 27);
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Courier Prime', ui-monospace, 'SF Mono', monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-destructive: var(--destructive);
+  --color-track: var(--track);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    scrollbar-color: var(--input) transparent;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    caret-color: var(--primary);
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 30%, transparent);
+    color: var(--foreground);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  a {
+    text-underline-offset: 3px;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

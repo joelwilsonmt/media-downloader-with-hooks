@@ -1,23 +1,12 @@
+import type { HookConfig } from '../../shared/schemas';
+
+export type { HookConfig };
+
 export interface DownloadResult {
   filePath: string;
   fileName: string;
   videoTitle: string; // The clean title extracted from metadata or filename
   sourceUrl: string;
-}
-
-export interface HookConfig {
-  tiktok?: {
-    clientKey?: string;
-    clientSecret?: string;
-    accessToken?: string;
-    title?: string;
-  };
-  slack?: {
-    webhookUrl: string;
-  }[];
-  webhook?: {
-    url: string;
-  }[];
 }
 
 export interface Hook {

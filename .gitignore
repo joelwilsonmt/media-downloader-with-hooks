@@ -3,3 +3,6 @@ dist
 .env
 /downloads
 .DS_Store
+*.log
+.playwright-mcp
+.impeccable

@@ -6,3 +6,4 @@ downloads
 .env
 .DS_Store
 *.log
+.impeccable

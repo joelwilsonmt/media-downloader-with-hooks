@@ -1,7 +1,7 @@
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
-import { Hook, DownloadResult, HookConfig } from './Hook';
+import type { DownloadResult, Hook, HookConfig } from './Hook';
 
 export class TiktokHook implements Hook {
   name = 'TiktokHook';
@@ -92,7 +92,7 @@ export class TiktokHook implements Hook {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('[TikTok] Upload failed:', errorMessage);
       // We re-throw so HookManager knows it failed
-      throw new Error(`TikTok Upload Failed: ${errorMessage}`);
+      throw new Error(`TikTok Upload Failed: ${errorMessage}`, { cause: error });
     }
   }
 }

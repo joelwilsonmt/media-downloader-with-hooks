@@ -1,4 +1,4 @@
-import { Hook, DownloadResult, HookConfig } from './Hook';
+import type { DownloadResult, Hook, HookConfig } from './Hook';
 import { TiktokHook } from './TiktokHook';
 import { SlackHook } from './SlackHook';
 import { WebhookHook } from './WebhookHook';
@@ -47,7 +47,7 @@ export class HookManager {
     }));
 
     results.forEach((res, index) => {
-      const hookName = this.hooks[index].name;
+      const hookName = this.hooks[index]?.name;
       if (res.status === 'fulfilled') {
         console.log(`[HookManager] Hook success: ${hookName}`);
       } else {

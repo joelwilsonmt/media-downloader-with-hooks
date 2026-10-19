@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Hook, DownloadResult, HookConfig } from './Hook';
+import type { DownloadResult, Hook, HookConfig } from './Hook';
 
 export class SlackHook implements Hook {
   name = 'SlackHook';

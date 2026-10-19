@@ -1,43 +1,35 @@
-FROM oven/bun:alpine
-
-# Install system dependencies
-# python3 and py3-pip are required for yt-dlp
-# ffmpeg is required for media processing
-# curl and ca-certificates are needed for downloading yt-dlp
-RUN apk add --no-cache \
-    python3 \
-    py3-pip \
-    ffmpeg \
-    curl \
-    ca-certificates \
-    nodejs
-
-# Install yt-dlp directly from the repository
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
-    chmod a+rx /usr/local/bin/yt-dlp
-
-# Create app directory
+# --- Build the web UI --------------------------------------------------------
+FROM oven/bun:1-alpine AS web
 WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-COPY bun.lock* ./
-
-# Install app dependencies
-RUN bun install
-
-# Copy app source
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 COPY . .
+RUN bun run build
 
-# Create downloads directory
-RUN mkdir -p /app/downloads
+# --- Runtime ------------------------------------------------------------------
+FROM oven/bun:1-alpine
 
-# Expose port
-EXPOSE 3000
+# python3 runs yt-dlp, ffmpeg does conversion and merging,
+# nodejs solves YouTube's JavaScript challenges (--js-runtimes node).
+RUN apk add --no-cache python3 py3-pip ffmpeg ca-certificates nodejs
 
-# Set Docker environment flag
+# yt-dlp from PyPI so its extras come along: [default] brings the YouTube
+# challenge solver scripts, curl_cffi enables browser impersonation (Vimeo and
+# others). Each image build pulls the latest release.
+RUN pip install --no-cache-dir --break-system-packages "yt-dlp[default]" \
+ && (pip install --no-cache-dir --break-system-packages curl_cffi \
+     || echo "curl_cffi unavailable; sites that need impersonation will fail")
+
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
+COPY src ./src
+COPY shared ./shared
+COPY --from=web /app/dist/web ./dist/web
+
 ENV IS_DOCKER=true
 ENV DOWNLOAD_DIR=/app/downloads
+RUN mkdir -p /app/downloads
 
-# Start the application using Bun directly
+EXPOSE 3000
 CMD ["bun", "src/server.ts"]
